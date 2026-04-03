@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Clock, Calendar as CalendarIcon, Save, Plus, Trash2, CheckCircle2 } from 'lucide-react';
 
 // Define the days of the week
