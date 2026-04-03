@@ -163,9 +163,9 @@ export default function Analytics() {
                             <h2 className="text-[16px] font-extrabold text-gray-900">University Origins</h2>
                             <p className="text-[13px] font-medium text-gray-500 mt-1 mb-6">Top tier institutions</p>
                             <div className="space-y-4">
-                                {UNIV_DATA.map((item, index) => (
+                                {UNIV_DATA.map((item, _index) => (
                                     <div key={item.name} className="flex items-center gap-3">
-                                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[_index % COLORS.length] }}></div>
                                         <div className="flex-1 flex justify-between">
                                             <span className="text-[13px] font-bold text-gray-900">{item.name}</span>
                                             <span className="text-[13px] font-semibold text-gray-500">{item.value.toLocaleString()}</span>
@@ -178,8 +178,8 @@ export default function Analytics() {
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                     <Pie data={UNIV_DATA} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={2} dataKey="value">
-                                        {UNIV_DATA.map((_, index) => (
-                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                        {UNIV_DATA.map((_, _index) => (
+                                            <Cell key={`cell-${_index}`} fill={COLORS[_index % COLORS.length]} />
                                         ))}
                                     </Pie>
                                 </PieChart>

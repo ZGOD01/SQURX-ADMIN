@@ -147,8 +147,8 @@ export default function CMS() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {RECENT_CHANGES.map((change, i) => (
-                                        <tr key={change.id} className={`group hover:bg-gray-50/80 transition-colors ${i !== RECENT_CHANGES.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                                    {RECENT_CHANGES.map((change, _i) => (
+                                        <tr key={change.id} className={`group hover:bg-gray-50/80 transition-colors ${_i !== RECENT_CHANGES.length - 1 ? 'border-b border-gray-50' : ''}`}>
                                             <td className="py-4 px-2 text-[14px] font-bold text-gray-900 truncate max-w-[200px]">{change.title || change.name}</td>
                                             <td className="py-4 px-2 text-[13px] font-semibold text-gray-600">{change.category}</td>
                                             <td className="py-4 px-2 text-[13px] font-semibold text-gray-500">{change.author}</td>

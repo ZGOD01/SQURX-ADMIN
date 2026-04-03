@@ -215,8 +215,8 @@ export default function DashboardOverview() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {INITIAL_MODERATION_QUEUE.map((item, idx) => (
-                                        <tr key={item.id} className={`group hover:bg-gray-50/80 transition-colors ${idx !== INITIAL_MODERATION_QUEUE.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                                    {INITIAL_MODERATION_QUEUE.map((item, _idx) => (
+                                        <tr key={item.id} className={`group hover:bg-gray-50/80 transition-colors ${_idx !== INITIAL_MODERATION_QUEUE.length - 1 ? 'border-b border-gray-50' : ''}`}>
                                             <td className="px-8 py-4">
                                                 <div className="text-[14px] font-bold text-gray-900">{item.entity}</div>
                                                 <div className="text-[11px] font-medium text-gray-400 mt-0.5">{item.id}</div>
