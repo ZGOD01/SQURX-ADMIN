@@ -1,8 +1,14 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, Navigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Topbar from '../components/Topbar';
 
 export default function DashboardLayout() {
+  const token = localStorage.getItem('adminToken');
+
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+
   return (
     <div className="flex h-screen bg-[#F7F7F9] overflow-hidden text-gray-900 font-sans selection:bg-gray-200 selection:text-black">
       <Sidebar />

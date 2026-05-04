@@ -2,10 +2,26 @@ import {
     Search,
     Bell,
     ChevronDown,
-    Command
+    Command,
+    LogOut
 } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Topbar() {
+    const navigate = useNavigate();
+    const [showDropdown, setShowDropdown] = useState(false);
+    
+    const userStr = localStorage.getItem('adminUser');
+    const user = userStr ? JSON.parse(userStr) : { fullName: 'Admin', role: 'admin' };
+    const initials = user.fullName ? user.fullName.substring(0, 2).toUpperCase() : 'AD';
+
+    const handleLogout = () => {
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminUser');
+        navigate('/login');
+    };
+
     return (
         <header className="h-20 bg-white/80 backdrop-blur-3xl sticky top-4 mx-4 lg:mx-10 z-40 flex items-center justify-between px-6 transition-all rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white">
 
@@ -45,16 +61,33 @@ export default function Topbar() {
                 </button>
 
                 {/* Profile Dropdown */}
-                <button className="flex items-center gap-3 focus:outline-none group hover:opacity-80 transition-opacity pl-2">
-                    <div className="flex flex-col items-end hidden sm:flex">
-                        <span className="text-sm font-bold text-gray-900 leading-none mb-1">Jane Admin</span>
-                        <span className="text-[11px] font-medium text-gray-500 leading-none">Global Ops</span>
-                    </div>
-                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-gray-900 to-gray-700 flex items-center justify-center text-white text-[15px] font-bold shadow-md shadow-black/10">
-                        JA
-                    </div>
-                    <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-gray-900 transition-colors" />
-                </button>
+                <div className="relative">
+                    <button 
+                        onClick={() => setShowDropdown(!showDropdown)}
+                        className="flex items-center gap-3 focus:outline-none group hover:opacity-80 transition-opacity pl-2"
+                    >
+                        <div className="flex flex-col items-end hidden sm:flex">
+                            <span className="text-sm font-bold text-gray-900 leading-none mb-1">{user.fullName || 'Admin'}</span>
+                            <span className="text-[11px] font-medium text-gray-500 leading-none capitalize">{user.role || 'Admin'}</span>
+                        </div>
+                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-gray-900 to-gray-700 flex items-center justify-center text-white text-[15px] font-bold shadow-md shadow-black/10 uppercase">
+                            {initials}
+                        </div>
+                        <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-gray-900 transition-colors" />
+                    </button>
+
+                    {showDropdown && (
+                        <div className="absolute right-0 mt-3 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
+                            <button 
+                                onClick={handleLogout}
+                                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors text-left font-medium"
+                            >
+                                <LogOut className="w-4 h-4" />
+                                Logout
+                            </button>
+                        </div>
+                    )}
+                </div>
 
             </div>
         </header>
