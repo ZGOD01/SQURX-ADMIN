@@ -36,25 +36,66 @@ export default function Quizzes() {
   });
 
   const fetchQuizzes = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch('https://squrx-backend.onrender.com/api/v1/admin/quiz?limit=50', {
-        headers: getHeaders()
-      });
-      const data = await res.json();
-      if (data.success) {
-        const quizList = Array.isArray(data.data) 
-          ? data.data 
-          : (data.data?.docs || data.data?.quizzes || data.data?.data || []);
-        setQuizzes(quizList);
-      } else {
-        setError(data.message || 'Failed to fetch quizzes');
+    setLoading(true);
+    setQuizzes([
+      {
+        _id: "q1",
+        title: "Where are you on the journey?",
+        options: [
+          { text: "Exploring Options", icon: "🧭" },
+          { text: "Shortlisted Universities", icon: "🏛️" },
+          { text: "Applied & Awaiting Results / Offer in Hand", icon: "📩" },
+          { text: "Paid Deposit", icon: "📜" },
+          { text: "Visa Received / Flying Soon", icon: "✈️" }
+        ],
+        isActive: true
+      },
+      {
+        _id: "q2",
+        title: "Your current field of expertise?",
+        options: [
+          { text: "STEM / Engineering", icon: "⚙️" },
+          { text: "Business / Management", icon: "💼" },
+          { text: "Arts / Creative Media", icon: "🎨" },
+          { text: "Health / Life Sciences", icon: "🧬" }
+        ],
+        isActive: true
+      },
+      {
+        _id: "q3",
+        title: "What is the primary source of funding?",
+        options: [
+          { text: "Majorly Loan", icon: "🏦" },
+          { text: "Majorly Self-funding", icon: "🛡️" },
+          { text: "Majorly Loan with little Self-funding", icon: "⚖️" },
+          { text: "Majorly Self-funding with little Loan", icon: "👛" }
+        ],
+        isActive: true
+      },
+      {
+        _id: "q4",
+        title: "What is your primary career goal?",
+        options: [
+          { text: "Maximum Salary (ROI)", icon: "📈" },
+          { text: "Global Settlement (PR)", icon: "🏠" },
+          { text: "Research & Innovation", icon: "🔬" },
+          { text: "Network & Prestige", icon: "🤝" }
+        ],
+        isActive: true
+      },
+      {
+        _id: "q5",
+        title: "What is your biggest \"Unknown\"?",
+        options: [
+          { text: "\"Will I get a job?\"", icon: "❓" },
+          { text: "\"Can I afford it?\"", icon: "💳" },
+          { text: "\"Is my profile good enough?\"", icon: "⭐" },
+          { text: "\"Which city is best for me?\"", icon: "🗺️" }
+        ],
+        isActive: true
       }
-    } catch (err) {
-      setError('Network error');
-    } finally {
-      setLoading(false);
-    }
+    ]);
+    setLoading(false);
   };
 
   const addOption = () => {
@@ -170,7 +211,7 @@ export default function Quizzes() {
                 required
                 value={newTitle}
                 onChange={e => setNewTitle(e.target.value)}
-                placeholder="e.g. What is your favourite programming language?"
+                placeholder="e.g. Where are you on the journey?"
                 className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 placeholder-gray-400"
               />
             </div>
