@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-    Home, Users, FileText, BarChart2,
-    ShieldCheck, BookOpen, Settings, LogOut, Calendar, Globe
+    Home, Users, BarChart2,
+    ShieldCheck, BookOpen, Settings, LogOut, Calendar, Globe, Newspaper, Clock
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -11,12 +11,13 @@ const cn = (...inputs: (string | undefined | null | false)[]) => twMerge(clsx(in
 const navItems = [
     { name: 'Overview', path: '/dashboard', icon: Home },
     { name: 'Members', path: '/users', icon: Users },
-    { name: 'Content', path: '/cms', icon: FileText },
+    { name: 'Articles', path: '/articles', icon: Newspaper },
     { name: 'Analytics', path: '/analytics', icon: BarChart2 },
     { name: 'Moderation', path: '/moderation', icon: ShieldCheck },
     { name: 'Curation', path: '/curation', icon: BookOpen },
     { name: 'Quizzes', path: '/quizzes', icon: Calendar },
     { name: 'Domains', path: '/domains', icon: Globe },
+    { name: 'Time Slots', path: '/timeslots', icon: Clock },
 ];
 
 export default function Sidebar() {
