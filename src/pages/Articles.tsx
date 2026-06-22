@@ -1,39 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus, Search, RefreshCw, Edit3, ToggleLeft, ToggleRight,
   X, Save, Eye, Tag as TagIcon, ChevronLeft, ChevronRight,
   AlertCircle, Loader2, FileText, CheckCircle, XCircle,
-  ArrowLeft, Clock, User, Newspaper, MoreVertical, Filter,
+  ArrowLeft, Clock, User, Newspaper, Filter, LayoutGrid,
+  List, Globe, EyeOff, ChevronDown,
 } from 'lucide-react';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const BASE_URL = 'https://squrx-backend.onrender.com/api/v1';
-const LIMIT = 9; // 3-column grid looks best at multiples of 3
-// The 3 real categories — each maps to a specific audience card on the live frontend
-const CATEGORIES = [
-  { value: 'student',   label: 'Students & Grads', emoji: '🎓', desc: 'Shows on the Students & Grads card' },
-  { value: 'recruiter', label: 'Companies',          emoji: '🏢', desc: 'Shows on the Companies card' },
-  { value: 'mentor',    label: 'Mentors',            emoji: '🌟', desc: 'Shows on the Mentors card' },
-];
-
-// Colour + label helpers for consistent display across the page
-const CATEGORY_META: Record<string, { label: string; emoji: string; colour: string }> = {
-  student:   { label: 'Students & Grads', emoji: '🎓', colour: 'bg-blue-50 text-blue-700 border-blue-100' },
-  recruiter: { label: 'Companies',        emoji: '🏢', colour: 'bg-violet-50 text-violet-700 border-violet-100' },
-  mentor:    { label: 'Mentors',          emoji: '🌟', colour: 'bg-amber-50 text-amber-700 border-amber-100' },
-};
-function CategoryBadge({ category, size = 'sm' }: { category?: string; size?: 'sm' | 'md' }) {
-  if (!category) return null;
-  const m = CATEGORY_META[category];
-  if (!m) return <span className="px-2.5 py-1 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg capitalize">{category}</span>;
-  return (
-    <span className={`inline-flex items-center gap-1 border font-bold rounded-lg ${
-      size === 'md' ? 'px-3 py-1 text-[12px]' : 'px-2.5 py-1 text-[10px]'
-    } ${m.colour}`}>
-      <span>{m.emoji}</span>{m.label}
-    </span>
-  );
-}
+const LIMIT = 12;
 
 function getHeaders() {
   return {
@@ -58,26 +34,72 @@ interface Article {
   updatedAt?: string;
 }
 
-interface Meta { total: number; page: number; limit: number; totalPages: number; }
+interface Meta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
 
 interface ArticleFormData {
-  title: string; description: string; content: string;
-  icon: string; category: string; tags: string[];
-  author: string; isActive: boolean; publishedAt: string;
+  title: string;
+  description: string;
+  content: string;
+  icon: string;
+  category: string;
+  tags: string[];
+  author: string;
+  isActive: boolean;
+  publishedAt: string;
 }
 
 const BLANK: ArticleFormData = {
   title: '', description: '', content: '',
-  icon: '', category: '', tags: [], author: '',
-  isActive: true, publishedAt: '',
+  icon: '', category: '', tags: [],
+  author: '', isActive: true, publishedAt: '',
 };
 
 type ViewMode = 'list' | 'create' | 'edit' | 'view';
+type DisplayMode = 'grid' | 'table';
+
+// ─── Category colour palette (auto-assigned by hash) ────────────────────────
+const PALETTE = [
+  'bg-blue-50 text-blue-700 border-blue-100',
+  'bg-violet-50 text-violet-700 border-violet-100',
+  'bg-amber-50 text-amber-700 border-amber-100',
+  'bg-emerald-50 text-emerald-700 border-emerald-100',
+  'bg-rose-50 text-rose-700 border-rose-100',
+  'bg-cyan-50 text-cyan-700 border-cyan-100',
+  'bg-orange-50 text-orange-700 border-orange-100',
+  'bg-pink-50 text-pink-700 border-pink-100',
+  'bg-indigo-50 text-indigo-700 border-indigo-100',
+  'bg-teal-50 text-teal-700 border-teal-100',
+];
+
+function categoryColour(cat?: string) {
+  if (!cat) return 'bg-gray-100 text-gray-600 border-gray-100';
+  let h = 0;
+  for (let i = 0; i < cat.length; i++) h = ((h << 5) - h + cat.charCodeAt(i)) | 0;
+  return PALETTE[Math.abs(h) % PALETTE.length];
+}
+
+// ─── Category Badge ───────────────────────────────────────────────────────────
+function CategoryBadge({ category, size = 'sm' }: { category?: string; size?: 'sm' | 'md' }) {
+  if (!category) return null;
+  const colour = categoryColour(category);
+  return (
+    <span className={`inline-flex items-center border font-bold rounded-lg capitalize ${
+      size === 'md' ? 'px-3 py-1 text-[12px]' : 'px-2.5 py-1 text-[10px]'
+    } ${colour}`}>
+      {category}
+    </span>
+  );
+}
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 function Toast({ msg, type }: { msg: string; type: 'success' | 'error' }) {
   return (
-    <div className={`fixed top-6 right-6 z-[999] flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl text-[13px] font-bold animate-in slide-in-from-top-4 duration-300 ${
+    <div className={`fixed top-6 right-6 z-[999] flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl text-[13px] font-bold ${
       type === 'success' ? 'bg-gray-900 text-white' : 'bg-red-50 text-red-700 border border-red-200'
     }`}>
       {type === 'success'
@@ -88,7 +110,7 @@ function Toast({ msg, type }: { msg: string; type: 'success' | 'error' }) {
   );
 }
 
-// ─── Skeleton Cards ───────────────────────────────────────────────────────────
+// ─── Skeleton Card ────────────────────────────────────────────────────────────
 function SkeletonCard() {
   return (
     <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-6 flex flex-col gap-4 animate-pulse">
@@ -104,10 +126,6 @@ function SkeletonCard() {
       <div className="flex gap-2 pt-2">
         <div className="h-6 w-16 bg-gray-100 rounded-lg" />
         <div className="h-6 w-14 bg-gray-100 rounded-lg" />
-      </div>
-      <div className="flex items-center justify-between pt-2 border-t border-gray-50">
-        <div className="h-3.5 w-24 bg-gray-100 rounded-lg" />
-        <div className="h-8 w-20 bg-gray-100 rounded-xl" />
       </div>
     </div>
   );
@@ -142,82 +160,159 @@ function TagInput({ tags, onChange }: { tags: string[]; onChange: (t: string[]) 
   );
 }
 
+// ─── Category Input with autocomplete ────────────────────────────────────────
+function CategoryInput({
+  value, onChange, suggestions,
+}: { value: string; onChange: (v: string) => void; suggestions: string[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const filtered = suggestions.filter(s =>
+    s.toLowerCase().includes(value.toLowerCase()) && s.toLowerCase() !== value.toLowerCase()
+  );
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  return (
+    <div className="relative" ref={ref}>
+      <input
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        placeholder="e.g. students, companies, mentors, career…"
+        className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 placeholder-gray-400 text-[13px] font-medium transition-all"
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-30 left-0 right-0 top-full mt-1 bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden">
+          <p className="px-4 pt-3 pb-1 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Existing categories</p>
+          {filtered.map(s => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => { onChange(s); setOpen(false); }}
+              className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors capitalize"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const inputClass = 'w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 placeholder-gray-400 text-[13px] font-medium transition-all';
 
 // ─── Article Form ─────────────────────────────────────────────────────────────
 function ArticleForm({
-  initial, onSave, onCancel, isSaving, mode,
+  initial, onSave, onCancel, isSaving, mode, categorySuggestions,
 }: {
   initial: ArticleFormData;
   onSave: (d: ArticleFormData) => void;
   onCancel: () => void;
   isSaving: boolean;
   mode: 'create' | 'edit';
+  categorySuggestions: string[];
 }) {
   const [f, setF] = useState<ArticleFormData>(initial);
   const set = (k: keyof ArticleFormData, v: unknown) => setF(p => ({ ...p, [k]: v }));
 
+  const validate = () => {
+    if (!f.title.trim()) return 'Title is required.';
+    if (!f.description.trim()) return 'Description is required.';
+    if (!f.content.trim()) return 'Content is required.';
+    return null;
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const err = validate();
+    if (err) { alert(err); return; }
+    onSave(f);
+  };
+
   return (
-    <form onSubmit={e => { e.preventDefault(); onSave(f); }} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-6">
       {/* Icon + Title */}
       <div className="flex gap-4 items-start">
         <div className="shrink-0">
-          <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Icon</label>
-          <input value={f.icon} onChange={e => set('icon', e.target.value)}
-            placeholder="🚀" className="w-16 text-center text-2xl bg-gray-50/50 px-2 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black transition-all" />
+          <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Icon / Emoji</label>
+          <input
+            value={f.icon} onChange={e => set('icon', e.target.value)}
+            placeholder="🚀" maxLength={4}
+            className="w-16 text-center text-2xl bg-gray-50/50 px-2 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black transition-all"
+          />
         </div>
         <div className="flex-1">
-          <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Title <span className="text-red-500">*</span></label>
-          <input required value={f.title} onChange={e => set('title', e.target.value)}
-            placeholder="e.g. Getting Started with Squrx" className={inputClass} />
+          <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+            Title <span className="text-red-500">*</span>
+          </label>
+          <input
+            required value={f.title} onChange={e => set('title', e.target.value)}
+            placeholder="e.g. Getting Started with Squrx" className={inputClass}
+          />
         </div>
       </div>
 
       {/* Description */}
       <div>
-        <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Description <span className="text-red-500">*</span></label>
-        <input required value={f.description} onChange={e => set('description', e.target.value)}
-          placeholder="Short summary shown on the article card" className={inputClass} />
+        <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+          Description <span className="text-red-500">*</span>
+        </label>
+        <input
+          required value={f.description} onChange={e => set('description', e.target.value)}
+          placeholder="Short summary shown on the article card" className={inputClass}
+        />
       </div>
 
       {/* Content */}
       <div>
-        <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Content <span className="text-red-500">*</span> <span className="normal-case text-gray-400 font-medium">(supports HTML)</span></label>
-        <textarea required value={f.content} onChange={e => set('content', e.target.value)}
+        <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+          Content <span className="text-red-500">*</span>{' '}
+          <span className="normal-case text-gray-400 font-medium">(supports HTML)</span>
+        </label>
+        <textarea
+          required value={f.content} onChange={e => set('content', e.target.value)}
           rows={9} placeholder="<h1>Welcome</h1><p>Full article body…</p>"
-          className={`${inputClass} resize-y`} />
+          className={`${inputClass} resize-y`}
+        />
+      </div>
+
+      {/* Category — free text with autocomplete */}
+      <div>
+        <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-1">
+          Category
+        </label>
+        <p className="text-[11px] font-medium text-gray-400 mb-2">
+          Enter any category name. Admin can freely add new categories — no restrictions.
+          Existing categories are suggested as you type.
+        </p>
+        <CategoryInput
+          value={f.category}
+          onChange={v => set('category', v)}
+          suggestions={categorySuggestions}
+        />
+        {f.category && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-[11px] font-medium text-gray-400">Preview:</span>
+            <CategoryBadge category={f.category} />
+          </div>
+        )}
       </div>
 
       {/* Author */}
       <div>
         <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Author</label>
-        <input value={f.author} onChange={e => set('author', e.target.value)}
-          placeholder="Squrx Team" className={inputClass} />
-      </div>
-
-      {/* Category — visual card picker */}
-      <div>
-        <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-1">Audience Category <span className="text-red-500">*</span></label>
-        <p className="text-[11px] font-medium text-gray-400 mb-3">Choose who this article is for — it will appear on that audience card in the live app.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {CATEGORIES.map(c => (
-            <button
-              key={c.value}
-              type="button"
-              onClick={() => set('category', f.category === c.value ? '' : c.value)}
-              className={`flex flex-col items-start gap-1.5 p-4 rounded-2xl border-2 text-left transition-all ${
-                f.category === c.value
-                  ? 'border-gray-900 bg-gray-900 text-white shadow-lg shadow-black/10'
-                  : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              <span className="text-2xl">{c.emoji}</span>
-              <span className={`text-[13px] font-extrabold ${f.category === c.value ? 'text-white' : 'text-gray-900'}`}>{c.label}</span>
-              <span className={`text-[11px] font-medium ${f.category === c.value ? 'text-gray-300' : 'text-gray-400'}`}>{c.desc}</span>
-            </button>
-          ))}
-        </div>
-        {!f.category && <p className="text-[11px] text-amber-600 font-medium mt-2">⚠ Select a category — article won't appear on the app without one.</p>}
+        <input
+          value={f.author} onChange={e => set('author', e.target.value)}
+          placeholder="Squrx Team" className={inputClass}
+        />
       </div>
 
       {/* Tags */}
@@ -231,15 +326,24 @@ function ArticleForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Publish Date</label>
-          <input type="datetime-local" value={f.publishedAt} onChange={e => set('publishedAt', e.target.value)} className={inputClass} />
+          <input
+            type="datetime-local" value={f.publishedAt}
+            onChange={e => set('publishedAt', e.target.value)} className={inputClass}
+          />
         </div>
         <div>
           <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Visibility</label>
-          <button type="button" onClick={() => set('isActive', !f.isActive)}
+          <button
+            type="button" onClick={() => set('isActive', !f.isActive)}
             className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold text-[13px] transition-all border ${
-              f.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
-            }`}>
-            {f.isActive ? <><CheckCircle className="w-4 h-4" />Published</> : <><XCircle className="w-4 h-4" />Draft / Hidden</>}
+              f.isActive
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+            }`}
+          >
+            {f.isActive
+              ? <><CheckCircle className="w-4 h-4" />Published — visible on frontend</>
+              : <><XCircle className="w-4 h-4" />Draft — hidden from public</>}
           </button>
         </div>
       </div>
@@ -263,7 +367,7 @@ function ArticleForm({
   );
 }
 
-// ─── Article Card ─────────────────────────────────────────────────────────────
+// ─── Article Card (Grid view) ─────────────────────────────────────────────────
 function ArticleCard({
   article, onView, onEdit, onToggle, isToggling,
 }: {
@@ -273,8 +377,6 @@ function ArticleCard({
   onToggle: (e: React.MouseEvent) => void;
   isToggling: boolean;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-
   const timeAgo = (dateStr?: string) => {
     if (!dateStr) return '';
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -291,71 +393,27 @@ function ArticleCard({
       onClick={onView}
       className="group bg-white rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_16px_40px_rgb(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col"
     >
-      {/* Card Top: Icon + Status + Menu */}
+      {/* Card Top */}
       <div className="p-6 flex items-start justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 border ${article.icon ? 'bg-gray-50 border-gray-100' : 'bg-gray-100 border-gray-200'}`}>
             {article.icon || <FileText className="w-5 h-5 text-gray-400" />}
           </div>
           <CategoryBadge category={article.category} />
         </div>
-
-        <div className="flex items-center gap-2 relative">
-          {/* Status pill */}
-          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg shrink-0 ${
-            article.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'
-          }`}>
-            {article.isActive ? '● Live' : '○ Draft'}
-          </span>
-
-          {/* Kebab menu */}
-          <button
-            onClick={e => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
-            className="p-1.5 text-gray-300 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-          >
-            <MoreVertical className="w-4 h-4" />
-          </button>
-
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={e => { e.stopPropagation(); setMenuOpen(false); }} />
-              <div className="absolute right-0 top-8 z-20 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 w-40 animate-in fade-in duration-150">
-                <button
-                  onClick={e => { e.stopPropagation(); setMenuOpen(false); onView(); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors"
-                >
-                  <Eye className="w-4 h-4 text-gray-400" /> View
-                </button>
-                <button
-                  onClick={e => { setMenuOpen(false); onEdit(e); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors"
-                >
-                  <Edit3 className="w-4 h-4 text-gray-400" /> Edit
-                </button>
-                <div className="h-px bg-gray-100 mx-3 my-1" />
-                <button
-                  onClick={e => { setMenuOpen(false); onToggle(e); }}
-                  disabled={isToggling}
-                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-semibold transition-colors ${
-                    article.isActive ? 'text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'
-                  }`}
-                >
-                  {isToggling
-                    ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : article.isActive ? <><ToggleLeft className="w-4 h-4" />Unpublish</> : <><ToggleRight className="w-4 h-4" />Publish</>}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+        <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg shrink-0 ml-2 ${
+          article.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'
+        }`}>
+          {article.isActive ? '● Live' : '○ Draft'}
+        </span>
       </div>
 
-      {/* Card Body: Title + Description */}
+      {/* Card Body */}
       <div className="px-6 pb-4 flex-1">
         <h3 className="text-[16px] font-extrabold text-gray-900 leading-snug mb-2 group-hover:text-black line-clamp-2">
           {article.title}
         </h3>
-        <p className="text-[13px] font-medium text-gray-500 leading-relaxed line-clamp-2">
+        <p className="text-[13px] font-medium text-gray-500 leading-relaxed line-clamp-3">
           {article.description}
         </p>
       </div>
@@ -375,7 +433,7 @@ function ArticleCard({
       )}
 
       {/* Card Footer */}
-      <div className="px-6 py-4 border-t border-gray-50 flex items-center justify-between bg-gray-50/30">
+      <div className="px-6 py-4 border-t border-gray-50 flex items-center justify-between bg-gray-50/30 gap-2">
         <div className="flex items-center gap-3 text-[11px] font-medium text-gray-400 min-w-0">
           {article.author && (
             <span className="flex items-center gap-1 truncate">
@@ -388,18 +446,127 @@ function ArticleCard({
             </span>
           )}
         </div>
-        <button
-          onClick={e => { e.stopPropagation(); onView(); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-600 text-[11px] font-bold rounded-xl hover:border-gray-900 hover:text-gray-900 transition-all shadow-sm shrink-0 opacity-0 group-hover:opacity-100"
-        >
-          <Eye className="w-3.5 h-3.5" /> Read
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 transition-all">
+          <button
+            onClick={e => { e.stopPropagation(); onToggle(e); }}
+            disabled={isToggling}
+            title={article.isActive ? 'Unpublish' : 'Publish'}
+            className={`p-1.5 rounded-xl transition-all text-[11px] font-bold border ${
+              article.isActive
+                ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100'
+                : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
+            }`}
+          >
+            {isToggling
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : article.isActive ? <EyeOff className="w-3.5 h-3.5" /> : <Globe className="w-3.5 h-3.5" />}
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); onEdit(e); }}
+            title="Edit"
+            className="p-1.5 rounded-xl bg-white border border-gray-200 text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-all"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); onView(); }}
+            title="View"
+            className="p-1.5 rounded-xl bg-white border border-gray-200 text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-all"
+          >
+            <Eye className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Article Detail ───────────────────────────────────────────────────────────
+// ─── Article Table Row (Table view) ──────────────────────────────────────────
+function ArticleTableRow({
+  article, onView, onEdit, onToggle, isToggling,
+}: {
+  article: Article;
+  onView: () => void;
+  onEdit: () => void;
+  onToggle: () => void;
+  isToggling: boolean;
+}) {
+  const dateStr = article.publishedAt || article.createdAt || article.updatedAt;
+  const dateLabel = dateStr
+    ? new Date(dateStr).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '—';
+
+  return (
+    <tr className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors group">
+      <td className="py-4 pl-6 pr-4">
+        <div className="flex items-center gap-3">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 border ${article.icon ? 'bg-gray-50 border-gray-100' : 'bg-gray-100 border-gray-200'}`}>
+            {article.icon || <FileText className="w-4 h-4 text-gray-400" />}
+          </div>
+          <div className="min-w-0">
+            <button
+              onClick={onView}
+              className="text-[13px] font-extrabold text-gray-900 hover:text-black text-left line-clamp-1 block"
+            >
+              {article.title}
+            </button>
+            <p className="text-[11px] font-medium text-gray-400 line-clamp-1 mt-0.5">{article.description}</p>
+          </div>
+        </div>
+      </td>
+      <td className="py-4 px-3 hidden md:table-cell">
+        <CategoryBadge category={article.category} />
+      </td>
+      <td className="py-4 px-3 hidden lg:table-cell">
+        <div className="flex flex-wrap gap-1">
+          {(article.tags || []).slice(0, 2).map(t => (
+            <span key={t} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg">#{t}</span>
+          ))}
+          {(article.tags || []).length > 2 && (
+            <span className="px-1.5 py-0.5 text-[10px] font-medium text-gray-400">+{(article.tags || []).length - 2}</span>
+          )}
+          {(article.tags || []).length === 0 && <span className="text-[11px] text-gray-300">—</span>}
+        </div>
+      </td>
+      <td className="py-4 px-3 hidden sm:table-cell">
+        <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
+          article.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'
+        }`}>
+          {article.isActive ? '● Live' : '○ Draft'}
+        </span>
+      </td>
+      <td className="py-4 px-3 hidden xl:table-cell">
+        <span className="text-[12px] font-medium text-gray-400">{dateLabel}</span>
+      </td>
+      <td className="py-4 pr-6 pl-3">
+        <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-all">
+          <button
+            onClick={onToggle}
+            disabled={isToggling}
+            title={article.isActive ? 'Unpublish' : 'Publish'}
+            className={`p-1.5 rounded-xl border transition-all ${
+              article.isActive
+                ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100'
+                : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
+            }`}
+          >
+            {isToggling
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : article.isActive ? <EyeOff className="w-3.5 h-3.5" /> : <Globe className="w-3.5 h-3.5" />}
+          </button>
+          <button onClick={onEdit} title="Edit" className="p-1.5 rounded-xl bg-white border border-gray-200 text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-all">
+            <Edit3 className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={onView} title="View" className="p-1.5 rounded-xl bg-white border border-gray-200 text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-all">
+            <Eye className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ─── Article Detail View ──────────────────────────────────────────────────────
 function ArticleDetail({
   article, onBack, onEdit, onToggle, isTogglingId,
 }: {
@@ -439,7 +606,6 @@ function ArticleDetail({
       </div>
 
       <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
-        {/* Header */}
         <div className="p-8 md:p-10">
           <div className="flex items-start gap-5 mb-6">
             <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shrink-0 border ${article.icon ? 'bg-gray-50 border-gray-100' : 'bg-gray-100 border-gray-200'}`}>
@@ -449,7 +615,7 @@ function ArticleDetail({
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 <CategoryBadge category={article.category} size="md" />
                 <span className={`px-3 py-1 text-[11px] font-bold rounded-lg ${article.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                  {article.isActive ? '● Published' : '○ Draft'}
+                  {article.isActive ? '● Published — visible on frontend' : '○ Draft — hidden from public'}
                 </span>
               </div>
               <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight leading-tight">{article.title}</h1>
@@ -462,12 +628,17 @@ function ArticleDetail({
                     {new Date(article.publishedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                   </span>
                 )}
+                {article.createdAt && !article.publishedAt && (
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5" />Created {new Date(article.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
           {(article.tags || []).length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-6">
+            <div className="flex flex-wrap gap-2 mb-4">
               {article.tags!.map(tag => (
                 <span key={tag} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 border border-gray-200 text-gray-600 text-[12px] font-bold rounded-xl">
                   <TagIcon className="w-3 h-3" />#{tag}
@@ -479,7 +650,6 @@ function ArticleDetail({
 
         <div className="border-t border-gray-100" />
 
-        {/* Content */}
         <div className="p-8 md:p-10">
           <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4">Article Content</p>
           <div
@@ -492,6 +662,32 @@ function ArticleDetail({
   );
 }
 
+// ─── Stats Bar ────────────────────────────────────────────────────────────────
+function StatsBar({ articles }: { articles: Article[] }) {
+  const total = articles.length;
+  const active = articles.filter(a => a.isActive).length;
+  const draft = total - active;
+  const categories = new Set(articles.map(a => a.category).filter(Boolean)).size;
+
+  const stats = [
+    { label: 'Total Articles', value: total, colour: 'text-gray-900' },
+    { label: 'Live on Frontend', value: active, colour: 'text-emerald-600' },
+    { label: 'Draft / Hidden', value: draft, colour: 'text-gray-500' },
+    { label: 'Unique Categories', value: categories, colour: 'text-violet-600' },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      {stats.map(s => (
+        <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_20px_rgb(0,0,0,0.03)] px-5 py-4">
+          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1">{s.label}</p>
+          <p className={`text-2xl font-extrabold ${s.colour}`}>{s.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Articles() {
   const [articles, setArticles] = useState<Article[]>([]);
@@ -499,12 +695,15 @@ export default function Articles() {
   const [error, setError] = useState('');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [view, setView] = useState<ViewMode>('list');
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('grid');
   const [selected, setSelected] = useState<Article | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isTogglingId, setIsTogglingId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [showCatFilter, setShowCatFilter] = useState(false);
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState<Meta>({ total: 0, page: 1, limit: LIMIT, totalPages: 1 });
 
@@ -512,6 +711,12 @@ export default function Articles() {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
   };
+
+  // Derive unique categories from loaded articles for autocomplete + filter
+  const uniqueCategories = useMemo(
+    () => [...new Set(articles.map(a => a.category).filter((c): c is string => !!c))].sort(),
+    [articles]
+  );
 
   // ── GET all ────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async (p = page, silent = false) => {
@@ -561,13 +766,15 @@ export default function Articles() {
     setIsSaving(true);
     try {
       const body: Record<string, unknown> = {
-        title: fd.title, description: fd.description,
-        content: fd.content, isActive: fd.isActive,
+        title: fd.title.trim(),
+        description: fd.description.trim(),
+        content: fd.content.trim(),
+        isActive: fd.isActive,
       };
-      if (fd.icon) body.icon = fd.icon;
-      if (fd.category) body.category = fd.category;
+      if (fd.icon.trim()) body.icon = fd.icon.trim();
+      if (fd.category.trim()) body.category = fd.category.trim();
       if (fd.tags.length) body.tags = fd.tags;
-      if (fd.author) body.author = fd.author;
+      if (fd.author.trim()) body.author = fd.author.trim();
       if (fd.publishedAt) body.publishedAt = new Date(fd.publishedAt).toISOString();
 
       const res = await fetch(`${BASE_URL}/admin/articles`, {
@@ -590,9 +797,14 @@ export default function Articles() {
     setIsSaving(true);
     try {
       const body: Record<string, unknown> = {
-        title: fd.title, description: fd.description, content: fd.content,
-        isActive: fd.isActive, icon: fd.icon, category: fd.category,
-        tags: fd.tags, author: fd.author,
+        title: fd.title.trim(),
+        description: fd.description.trim(),
+        content: fd.content.trim(),
+        isActive: fd.isActive,
+        icon: fd.icon.trim(),
+        category: fd.category.trim(),
+        tags: fd.tags,
+        author: fd.author.trim(),
       };
       if (fd.publishedAt) body.publishedAt = new Date(fd.publishedAt).toISOString();
 
@@ -601,7 +813,7 @@ export default function Articles() {
       });
       const data = await res.json();
       if (data.success) {
-        showToast('Article updated!');
+        showToast('Article updated! ✓');
         const updated = await fetchOne(selected._id);
         if (updated) setView('view');
         fetchAll(page, true);
@@ -612,7 +824,7 @@ export default function Articles() {
     finally { setIsSaving(false); }
   };
 
-  // ── PUT toggle ─────────────────────────────────────────────────────────────
+  // ── PUT toggle active/inactive ─────────────────────────────────────────────
   const handleToggle = async (id: string, cur: boolean) => {
     setIsTogglingId(id);
     try {
@@ -622,7 +834,7 @@ export default function Articles() {
       });
       const data = await res.json();
       if (data.success) {
-        showToast(`Article ${!cur ? 'published' : 'unpublished'}`);
+        showToast(`Article ${!cur ? 'published — now visible on frontend ✓' : 'unpublished — hidden from public ✓'}`);
         setArticles(prev => prev.map(a => a._id === id ? { ...a, isActive: !cur } : a));
         if (selected?._id === id) setSelected(p => p ? { ...p, isActive: !cur } : p);
       } else {
@@ -636,17 +848,30 @@ export default function Articles() {
   const openView = async (id: string) => { const a = await fetchOne(id); if (a) setView('view'); };
   const openEdit = async (id: string) => { const a = await fetchOne(id); if (a) setView('edit'); };
 
+  // Client-side filter (since API only supports page/limit, not search)
   const filtered = articles.filter(a => {
     const q = search.toLowerCase();
-    const mQ = !search || a.title.toLowerCase().includes(q) || (a.author || '').toLowerCase().includes(q) || (a.category || '').toLowerCase().includes(q);
-    const mS = statusFilter === 'all' || (statusFilter === 'active' && a.isActive) || (statusFilter === 'inactive' && !a.isActive);
-    return mQ && mS;
+    const mQ = !search
+      || a.title.toLowerCase().includes(q)
+      || (a.author || '').toLowerCase().includes(q)
+      || (a.category || '').toLowerCase().includes(q)
+      || (a.tags || []).some(t => t.toLowerCase().includes(q))
+      || a.description.toLowerCase().includes(q);
+    const mS = statusFilter === 'all'
+      || (statusFilter === 'active' && a.isActive)
+      || (statusFilter === 'inactive' && !a.isActive);
+    const mC = !categoryFilter || (a.category || '').toLowerCase() === categoryFilter.toLowerCase();
+    return mQ && mS && mC;
   });
 
   const editInitial: ArticleFormData = selected ? {
-    title: selected.title, description: selected.description, content: selected.content,
-    icon: selected.icon || '', category: selected.category || '',
-    tags: selected.tags || [], author: selected.author || '',
+    title: selected.title,
+    description: selected.description,
+    content: selected.content,
+    icon: selected.icon || '',
+    category: selected.category || '',
+    tags: selected.tags || [],
+    author: selected.author || '',
     isActive: selected.isActive,
     publishedAt: selected.publishedAt ? new Date(selected.publishedAt).toISOString().slice(0, 16) : '',
   } : BLANK;
@@ -660,7 +885,7 @@ export default function Articles() {
       {view === 'list' && (
         <>
           {/* Page Header */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <div>
               <div className="flex items-center gap-3 mb-1.5">
                 <div className="w-10 h-10 bg-gray-900 rounded-2xl flex items-center justify-center shadow-md shadow-black/10">
@@ -669,7 +894,7 @@ export default function Articles() {
                 <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Articles</h1>
               </div>
               <p className="text-[14px] font-medium text-gray-500 ml-[52px]">
-                Create and manage platform articles. Changes reflect instantly on the app.
+                Manage articles/cards dynamically — any category, any number.
                 {!loading && <span className="ml-1.5 font-bold text-gray-900">{meta.total} total</span>}
               </p>
             </div>
@@ -691,6 +916,9 @@ export default function Articles() {
             </div>
           </div>
 
+          {/* Stats */}
+          {!loading && articles.length > 0 && <StatsBar articles={articles} />}
+
           {/* Error */}
           {error && (
             <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 px-5 py-4 rounded-2xl text-[13px] font-bold mb-6">
@@ -700,32 +928,127 @@ export default function Articles() {
             </div>
           )}
 
-          {/* Search + Filter */}
+          {/* Search + Filter Bar */}
           <div className="bg-white rounded-3xl p-3 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 flex flex-col md:flex-row md:items-center gap-3 mb-8">
+            {/* Search */}
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
-                type="text" placeholder="Search by title, author, or category…"
+                type="text" placeholder="Search by title, description, category, tags, author…"
                 value={search} onChange={e => setSearch(e.target.value)}
                 className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-transparent focus:border-gray-200 focus:bg-white rounded-2xl text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-gray-100 transition-all"
               />
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
+
+            {/* Status filter */}
             <div className="flex items-center gap-2 shrink-0">
               <Filter className="w-4 h-4 text-gray-400 ml-1" />
               <div className="flex bg-gray-50 p-1 rounded-2xl border border-gray-100">
                 {(['all', 'active', 'inactive'] as const).map(s => (
                   <button key={s} onClick={() => setStatusFilter(s)}
-                    className={`px-4 py-2 rounded-xl text-[12px] font-bold capitalize transition-all ${
+                    className={`px-3 py-2 rounded-xl text-[12px] font-bold capitalize transition-all ${
                       statusFilter === s ? 'bg-white shadow-sm text-gray-900 border border-gray-100' : 'text-gray-500 hover:text-gray-900'
                     }`}>
-                    {s === 'active' ? '● Active' : s === 'inactive' ? '○ Draft' : 'All'}
+                    {s === 'active' ? '● Live' : s === 'inactive' ? '○ Draft' : 'All'}
                   </button>
                 ))}
               </div>
             </div>
+
+            {/* Category filter */}
+            {uniqueCategories.length > 0 && (
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => setShowCatFilter(v => !v)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border text-[12px] font-bold transition-all ${
+                    categoryFilter ? 'bg-black text-white border-black' : 'bg-gray-50 text-gray-600 border-gray-100 hover:border-gray-300'
+                  }`}
+                >
+                  {categoryFilter ? <><X className="w-3 h-3" onClick={e => { e.stopPropagation(); setCategoryFilter(''); }} />{categoryFilter}</> : <><Filter className="w-3 h-3" />Category<ChevronDown className="w-3 h-3" /></>}
+                </button>
+                {showCatFilter && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowCatFilter(false)} />
+                    <div className="absolute right-0 top-full mt-2 z-20 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 min-w-[180px]">
+                      <button
+                        onClick={() => { setCategoryFilter(''); setShowCatFilter(false); }}
+                        className={`w-full text-left px-4 py-2.5 text-[13px] font-semibold hover:bg-gray-50 ${!categoryFilter ? 'text-gray-900' : 'text-gray-500'}`}
+                      >
+                        All Categories
+                      </button>
+                      {uniqueCategories.map(c => (
+                        <button
+                          key={c}
+                          onClick={() => { setCategoryFilter(c); setShowCatFilter(false); }}
+                          className={`w-full text-left px-4 py-2.5 text-[13px] font-semibold capitalize hover:bg-gray-50 ${
+                            categoryFilter === c ? 'text-gray-900 font-extrabold' : 'text-gray-600'
+                          }`}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Display mode toggle */}
+            <div className="flex bg-gray-50 p-1 rounded-2xl border border-gray-100 shrink-0">
+              <button
+                onClick={() => setDisplayMode('grid')}
+                className={`p-2 rounded-xl transition-all ${displayMode === 'grid' ? 'bg-white shadow-sm text-gray-900 border border-gray-100' : 'text-gray-400 hover:text-gray-700'}`}
+                title="Grid view"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setDisplayMode('table')}
+                className={`p-2 rounded-xl transition-all ${displayMode === 'table' ? 'bg-white shadow-sm text-gray-900 border border-gray-100' : 'text-gray-400 hover:text-gray-700'}`}
+                title="Table view"
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
-          {/* Cards Grid */}
+          {/* Active filter chips */}
+          {(search || statusFilter !== 'all' || categoryFilter) && (
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <span className="text-[12px] font-medium text-gray-400">Filters:</span>
+              {search && (
+                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-[11px] font-bold rounded-lg">
+                  "{search}"
+                  <button onClick={() => setSearch('')}><X className="w-2.5 h-2.5" /></button>
+                </span>
+              )}
+              {statusFilter !== 'all' && (
+                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-[11px] font-bold rounded-lg capitalize">
+                  {statusFilter}
+                  <button onClick={() => setStatusFilter('all')}><X className="w-2.5 h-2.5" /></button>
+                </span>
+              )}
+              {categoryFilter && (
+                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-[11px] font-bold rounded-lg capitalize">
+                  {categoryFilter}
+                  <button onClick={() => setCategoryFilter('')}><X className="w-2.5 h-2.5" /></button>
+                </span>
+              )}
+              <button
+                onClick={() => { setSearch(''); setStatusFilter('all'); setCategoryFilter(''); }}
+                className="text-[11px] font-bold text-gray-400 hover:text-gray-700 underline"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+
+          {/* Grid View */}
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
@@ -738,19 +1061,19 @@ export default function Articles() {
               <div className="text-center">
                 <p className="text-[17px] font-extrabold text-gray-900 mb-2">No articles found</p>
                 <p className="text-[14px] font-medium text-gray-500 max-w-xs">
-                  {search || statusFilter !== 'all'
-                    ? 'Try adjusting your search or filter.'
+                  {search || statusFilter !== 'all' || categoryFilter
+                    ? 'Try adjusting your search or filters.'
                     : 'Create your first article — it will appear on the platform instantly.'}
                 </p>
               </div>
-              {!search && statusFilter === 'all' && (
+              {!search && statusFilter === 'all' && !categoryFilter && (
                 <button onClick={() => setView('create')}
                   className="flex items-center gap-2 mt-2 px-6 py-3 bg-black text-white text-[13px] font-bold rounded-2xl shadow-lg hover:bg-gray-800 transition-all">
                   <Plus className="w-4 h-4" /> Create First Article
                 </button>
               )}
             </div>
-          ) : (
+          ) : displayMode === 'grid' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filtered.map(art => (
                 <ArticleCard
@@ -763,13 +1086,44 @@ export default function Articles() {
                 />
               ))}
             </div>
+          ) : (
+            /* Table View */
+            <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50/50">
+                      <th className="text-left py-4 pl-6 pr-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Article</th>
+                      <th className="text-left py-4 px-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest hidden md:table-cell">Category</th>
+                      <th className="text-left py-4 px-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest hidden lg:table-cell">Tags</th>
+                      <th className="text-left py-4 px-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest hidden sm:table-cell">Status</th>
+                      <th className="text-left py-4 px-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest hidden xl:table-cell">Date</th>
+                      <th className="py-4 pr-6 pl-3 text-right text-[11px] font-bold text-gray-400 uppercase tracking-widest">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map(art => (
+                      <ArticleTableRow
+                        key={art._id}
+                        article={art}
+                        onView={() => openView(art._id)}
+                        onEdit={() => openEdit(art._id)}
+                        onToggle={() => handleToggle(art._id, art.isActive)}
+                        isToggling={isTogglingId === art._id}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
 
           {/* Pagination */}
           {!loading && meta.totalPages > 1 && (
             <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-100">
               <p className="text-[13px] font-medium text-gray-500">
-                Page <span className="font-bold text-gray-900">{meta.page}</span> of <span className="font-bold text-gray-900">{meta.totalPages}</span>
+                Page <span className="font-bold text-gray-900">{meta.page}</span> of{' '}
+                <span className="font-bold text-gray-900">{meta.totalPages}</span>
                 <span className="text-gray-400 ml-2">({meta.total} total)</span>
               </p>
               <div className="flex gap-2">
@@ -795,17 +1149,28 @@ export default function Articles() {
             <ArrowLeft className="w-4 h-4" /> Back to Articles
           </button>
           <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
-            <div className="px-8 py-6 border-b border-gray-100 bg-gray-50/50 flex items-center gap-3">
-              <div className="w-9 h-9 bg-black rounded-2xl flex items-center justify-center shrink-0">
-                <Plus className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h2 className="text-[17px] font-extrabold text-gray-900">New Article</h2>
-                <p className="text-[12px] font-medium text-gray-500">Publish a new article — it appears on the platform instantly.</p>
+            <div className="px-8 py-6 border-b border-gray-100 bg-gray-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-black rounded-2xl flex items-center justify-center shrink-0">
+                  <Plus className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-[17px] font-extrabold text-gray-900">New Article</h2>
+                  <p className="text-[12px] font-medium text-gray-500">
+                    Create any article with any category — no restrictions.
+                  </p>
+                </div>
               </div>
             </div>
             <div className="p-8">
-              <ArticleForm initial={BLANK} onSave={handleCreate} onCancel={() => setView('list')} isSaving={isSaving} mode="create" />
+              <ArticleForm
+                initial={BLANK}
+                onSave={handleCreate}
+                onCancel={() => setView('list')}
+                isSaving={isSaving}
+                mode="create"
+                categorySuggestions={uniqueCategories}
+              />
             </div>
           </div>
         </div>
@@ -819,17 +1184,26 @@ export default function Articles() {
             <ArrowLeft className="w-4 h-4" /> Back to Article
           </button>
           <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
-            <div className="px-8 py-6 border-b border-gray-100 bg-gray-50/50 flex items-center gap-3">
-              <div className="w-9 h-9 bg-black rounded-2xl flex items-center justify-center shrink-0">
-                <Edit3 className="w-4 h-4 text-white" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-[17px] font-extrabold text-gray-900">Edit Article</h2>
-                <p className="text-[12px] font-medium text-gray-500 truncate max-w-sm">{selected.title}</p>
+            <div className="px-8 py-6 border-b border-gray-100 bg-gray-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-black rounded-2xl flex items-center justify-center shrink-0">
+                  <Edit3 className="w-4 h-4 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-[17px] font-extrabold text-gray-900">Edit Article</h2>
+                  <p className="text-[12px] font-medium text-gray-500 truncate max-w-sm">{selected.title}</p>
+                </div>
               </div>
             </div>
             <div className="p-8">
-              <ArticleForm initial={editInitial} onSave={handleUpdate} onCancel={() => setView('view')} isSaving={isSaving} mode="edit" />
+              <ArticleForm
+                initial={editInitial}
+                onSave={handleUpdate}
+                onCancel={() => setView('view')}
+                isSaving={isSaving}
+                mode="edit"
+                categorySuggestions={uniqueCategories}
+              />
             </div>
           </div>
         </div>
