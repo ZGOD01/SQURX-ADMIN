@@ -10,6 +10,7 @@ import Quizzes from './pages/Quizzes';
 import Domains from './pages/Domains';
 import TimeSlots from './pages/TimeSlots';
 import Settings from './pages/Settings';
+import SiteSettings from './pages/SiteSettings';
 import Login from './pages/Login';
 import './App.css';
 
@@ -30,6 +31,7 @@ function App() {
           <Route path="domains" element={<Domains />} />
           <Route path="timeslots" element={<TimeSlots />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="site-settings" element={<SiteSettings />} />
         </Route>
       </Routes>
     </Router>

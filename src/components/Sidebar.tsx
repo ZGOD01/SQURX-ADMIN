@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     Home, Users, BarChart2,
-    ShieldCheck, BookOpen, Settings, LogOut, Calendar, Globe, Newspaper, Clock
+    ShieldCheck, BookOpen, Settings, LogOut, Calendar, Globe, Newspaper, Clock, SlidersHorizontal
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -18,6 +18,7 @@ const navItems = [
     { name: 'Quizzes', path: '/quizzes', icon: Calendar },
     { name: 'Domains', path: '/domains', icon: Globe },
     { name: 'Time Slots', path: '/timeslots', icon: Clock },
+    { name: 'Site Setting', path: '/site-settings', icon: SlidersHorizontal },
 ];
 
 export default function Sidebar() {
