@@ -13,7 +13,7 @@ const LIMIT = 12;
 
 function getHeaders() {
   return {
-    Authorization: `Bearer ${localStorage.getItem('adminToken')}`,
+    Authorization: `Bearer ${sessionStorage.getItem('adminToken')}`,
     'Content-Type': 'application/json',
   };
 }

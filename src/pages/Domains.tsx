@@ -19,7 +19,7 @@ export default function Domains() {
   }, []);
 
   const getHeaders = () => ({
-    'Authorization': `Bearer ${localStorage.getItem('adminToken')}`,
+    'Authorization': `Bearer ${sessionStorage.getItem('adminToken')}`,
     'Content-Type': 'application/json'
   });
 

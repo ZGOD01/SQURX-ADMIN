@@ -12,13 +12,13 @@ export default function Topbar() {
     const navigate = useNavigate();
     const [showDropdown, setShowDropdown] = useState(false);
     
-    const userStr = localStorage.getItem('adminUser');
+    const userStr = sessionStorage.getItem('adminUser');
     const user = userStr ? JSON.parse(userStr) : { fullName: 'Admin', role: 'admin' };
     const initials = user.fullName ? user.fullName.substring(0, 2).toUpperCase() : 'AD';
 
     const handleLogout = () => {
-        localStorage.removeItem('adminToken');
-        localStorage.removeItem('adminUser');
+        sessionStorage.removeItem('adminToken');
+        sessionStorage.removeItem('adminUser');
         navigate('/login');
     };
 

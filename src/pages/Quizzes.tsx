@@ -31,7 +31,7 @@ export default function Quizzes() {
   }, []);
 
   const getHeaders = () => ({
-    'Authorization': `Bearer ${localStorage.getItem('adminToken')}`,
+    'Authorization': `Bearer ${sessionStorage.getItem('adminToken')}`,
     'Content-Type': 'application/json'
   });
 

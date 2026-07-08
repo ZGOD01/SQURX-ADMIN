@@ -9,7 +9,7 @@ export default function Login() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (localStorage.getItem('adminToken')) {
+    if (sessionStorage.getItem('adminToken')) {
       navigate('/dashboard');
     }
   }, [navigate]);
@@ -29,8 +29,8 @@ export default function Login() {
       const data = await response.json();
 
       if (data.success) {
-        localStorage.setItem('adminToken', data.data.token);
-        localStorage.setItem('adminUser', JSON.stringify(data.data.user));
+        sessionStorage.setItem('adminToken', data.data.token);
+        sessionStorage.setItem('adminUser', JSON.stringify(data.data.user));
         navigate('/dashboard');
       } else {
         setError(data.message || 'Login failed');
