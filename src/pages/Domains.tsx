@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Globe, Plus, AlertCircle } from 'lucide-react';
+import { Globe, Plus, AlertCircle, Search } from 'lucide-react';
 
 interface Domain {
   _id: string;
@@ -13,10 +13,20 @@ export default function Domains() {
   const [error, setError] = useState('');
   const [newDomainName, setNewDomainName] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchDomains();
-  }, []);
+  }, [debouncedSearch]);
 
   const getHeaders = () => ({
     'Authorization': `Bearer ${sessionStorage.getItem('adminToken')}`,
@@ -26,7 +36,12 @@ export default function Domains() {
   const fetchDomains = async () => {
     try {
       setLoading(true);
-      const res = await fetch('https://squrx-backend.onrender.com/api/v1/admin/domains', {
+      let url = 'https://squrx-backend.onrender.com/api/v1/admin/domains';
+      if (debouncedSearch.trim()) {
+        url += `?search=${encodeURIComponent(debouncedSearch.trim())}`;
+      }
+      
+      const res = await fetch(url, {
         headers: getHeaders()
       });
       const data = await res.json();
@@ -142,14 +157,28 @@ export default function Domains() {
       </div>
 
       <div className="bg-white rounded-3xl p-6 md:p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6">Existing Domains</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900">Existing Domains</h2>
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search domains..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full pl-11 pr-4 py-2.5 bg-gray-50 border border-transparent focus:border-gray-200 focus:bg-white rounded-2xl text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-gray-100 transition-all"
+            />
+          </div>
+        </div>
         
         {loading ? (
           <div className="flex justify-center p-8">
             <div className="w-8 h-8 border-4 border-gray-200 border-t-black rounded-full animate-spin"></div>
           </div>
         ) : domains.length === 0 ? (
-          <div className="text-center p-8 text-gray-500">No domains found. Add your first one above.</div>
+          <div className="text-center p-8 text-gray-500">
+            {debouncedSearch ? 'No matching domains found.' : 'No domains found. Add your first one above.'}
+          </div>
         ) : (
           <div className="space-y-3">
             {domains.map((domain) => (

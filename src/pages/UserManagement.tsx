@@ -81,6 +81,9 @@ export default function UserManagement() {
     const filterPopoverRef = useRef<HTMLDivElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
+    const DISPLAY_LIMIT = 15;
+    const displayedUsers = users.slice((page - 1) * DISPLAY_LIMIT, page * DISPLAY_LIMIT);
+
     // Toast triggers
     const showToast = (text: string, type: 'success' | 'error' = 'success') => {
         const id = Date.now();
@@ -125,11 +128,11 @@ export default function UserManagement() {
     };
 
     // Load users from backend
-    const fetchUsers = async (p = page, silent = false) => {
+    const fetchUsers = async (silent = false) => {
         if (!silent) setLoading(true);
         setError('');
         try {
-            let url = `${BASE_URL}/admin/users?page=${p}&limit=${LIMIT}`;
+            let url = `${BASE_URL}/admin/users?page=1&limit=${LIMIT}`;
             
             if (activeTab !== 'All') {
                 url += `&role=${activeTab.toLowerCase()}`;
@@ -153,10 +156,11 @@ export default function UserManagement() {
                     : (data.data?.docs || data.data?.users || data.data?.data || []);
                 
                 setUsers(docs);
-                const total = data.data?.total ?? data.data?.totalDocs ?? docs.length;
-                const calculatedPages = data.data?.totalPages ?? Math.ceil(total / LIMIT);
-                setTotalPages(calculatedPages || 1);
+                const total = docs.length;
+                const calculatedPages = Math.ceil(total / DISPLAY_LIMIT) || 1;
+                setTotalPages(calculatedPages);
                 setTotalResults(total);
+                setPage(prev => Math.min(prev, calculatedPages));
             } else {
                 setError(data.message || 'Failed to retrieve users');
                 showToast(data.message || 'Failed to retrieve users', 'error');
@@ -171,8 +175,8 @@ export default function UserManagement() {
     };
 
     useEffect(() => {
-        fetchUsers(page);
-    }, [page, activeTab, debouncedSearch, isActiveFilter, isVerifiedFilter]);
+        fetchUsers();
+    }, [activeTab, debouncedSearch, isActiveFilter, isVerifiedFilter]);
 
     // Export users to CSV (client-side generation)
     const handleExportCSV = () => {
@@ -217,7 +221,7 @@ export default function UserManagement() {
             const data = await res.json();
             if (data.success) {
                 showToast(`User ${!user.isVerified ? 'verified' : 'unverified'} successfully!`);
-                fetchUsers(page, true);
+                fetchUsers(true);
             } else {
                 showToast(data.message || 'Failed to update verification status', 'error');
             }
@@ -240,7 +244,7 @@ export default function UserManagement() {
             const data = await res.json();
             if (data.success) {
                 showToast(user.isActive ? 'Member suspended successfully 🔒' : 'Member reactivated successfully 🔑');
-                fetchUsers(page, true);
+                fetchUsers(true);
             } else {
                 showToast(data.message || 'Failed to update account status', 'error');
             }
@@ -317,11 +321,13 @@ export default function UserManagement() {
                     password: '',
                     role: 'student'
                 });
-                fetchUsers(1);
+                fetchUsers();
+                setPage(1);
             } else {
                 showToast(`User created but verification failed: ${otpData.message}`, 'error');
                 setShowInviteModal(false);
-                fetchUsers(1);
+                fetchUsers();
+                setPage(1);
             }
         } catch {
             showToast('Network error while inviting user', 'error');
@@ -371,7 +377,7 @@ export default function UserManagement() {
             if (data.success) {
                 showToast('Member profile updated successfully!');
                 setShowEditModal(null);
-                fetchUsers(page, true);
+                fetchUsers(true);
             } else {
                 showToast(data.message || 'Failed to update member profile', 'error');
             }
@@ -396,7 +402,7 @@ export default function UserManagement() {
             if (data.success) {
                 showToast('Member profile deleted successfully.');
                 setShowDeleteModal(null);
-                fetchUsers(page);
+                fetchUsers();
             } else {
                 showToast(data.message || 'Failed to delete member profile', 'error');
             }
@@ -577,7 +583,7 @@ export default function UserManagement() {
                     <button 
                         onClick={() => {
                             setIsRefreshing(true);
-                            fetchUsers(page);
+                            fetchUsers();
                         }}
                         disabled={loading}
                         className="p-3 bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-gray-900 rounded-2xl transition-all cursor-pointer flex items-center justify-center"
@@ -631,7 +637,7 @@ export default function UserManagement() {
                                         <td className="px-8 py-5 text-right"><div className="w-20 h-8 bg-gray-100 rounded-xl ml-auto" /></td>
                                     </tr>
                                 ))
-                            ) : users.map((user) => (
+                            ) : displayedUsers.map((user) => (
                                 <tr key={user._id} className="group hover:bg-gray-50/40 transition-colors">
                                     <td className="px-8 py-5 text-sm">
                                         <div className="flex items-center gap-4">
@@ -773,7 +779,7 @@ export default function UserManagement() {
                 {/* Pagination Footer */}
                 <div className="px-8 py-5 border-t border-gray-100 flex items-center justify-between bg-gray-50/30">
                     <p className="text-[13px] font-medium text-gray-500">
-                        Showing <span className="font-bold text-gray-900">{users.length}</span> of <span className="font-bold text-gray-900">{totalResults}</span> records
+                        Showing <span className="font-bold text-gray-900">{displayedUsers.length}</span> of <span className="font-bold text-gray-900">{totalResults}</span> records
                     </p>
                     {totalPages > 1 && (
                         <div className="flex gap-2 select-none">
