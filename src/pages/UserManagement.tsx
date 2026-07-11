@@ -8,7 +8,7 @@ import {
     Lock, ShieldAlert, Key, RefreshCw, Download
 } from 'lucide-react';
 
-const BASE_URL = 'https://squrx-backend.onrender.com/api/v1';
+import { API_BASE_URL as BASE_URL } from '../config/api';
 const LIMIT = 10000;
 
 interface User {

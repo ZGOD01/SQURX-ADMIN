@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Calendar as CalendarIcon, Plus, Trash2, AlertCircle, Loader2 } from 'lucide-react';
+import { API_BASE_URL } from '../config/api';
 
 interface QuizOption {
   _id?: string;
@@ -39,7 +40,7 @@ export default function Quizzes() {
     try {
       setLoading(true);
       setError('');
-      const res = await fetch('https://squrx-backend.onrender.com/api/v1/admin/quiz', {
+      const res = await fetch(`${API_BASE_URL}/admin/quiz`, {
         headers: getHeaders()
       });
       const data = await res.json();
@@ -85,7 +86,7 @@ export default function Quizzes() {
     try {
       setSavingQuiz(true);
       setError('');
-      const res = await fetch('https://squrx-backend.onrender.com/api/v1/admin/quiz', {
+      const res = await fetch(`${API_BASE_URL}/admin/quiz`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({
@@ -116,7 +117,7 @@ export default function Quizzes() {
     try {
       // Optimistic update
       setQuizzes(quizzes.map(q => q._id === id ? { ...q, isActive: !currentStatus } : q));
-      const res = await fetch(`https://squrx-backend.onrender.com/api/v1/admin/quiz/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/admin/quiz/${id}`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify({ isActive: !currentStatus })

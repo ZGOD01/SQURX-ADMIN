@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
-const BASE_URL = 'https://squrx-backend.onrender.com/api/v1';
+import { API_BASE_URL as BASE_URL } from '../config/api';
 const LIMIT = 12;
 
 function getHeaders() {

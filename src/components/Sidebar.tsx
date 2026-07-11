@@ -1,7 +1,8 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-    Home, Users, BarChart2,
-    ShieldCheck, BookOpen, Settings, LogOut, Calendar, Globe, Newspaper, Clock, SlidersHorizontal
+    ShieldCheck, BookOpen, Settings, LogOut, Calendar, Globe, Newspaper, Clock, SlidersHorizontal,
+    Home, Users, FileText, BarChart2,
+    Briefcase
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -16,6 +17,7 @@ const navItems = [
     { name: 'Moderation', path: '/moderation', icon: ShieldCheck },
     { name: 'Curation', path: '/curation', icon: BookOpen },
     { name: 'Quizzes', path: '/quizzes', icon: Calendar },
+    { name: 'Jobs', path: '/jobs', icon: Briefcase },
     { name: 'Domains', path: '/domains', icon: Globe },
     { name: 'Time Slots', path: '/timeslots', icon: Clock },
     { name: 'Site Setting', path: '/site-settings', icon: SlidersHorizontal },

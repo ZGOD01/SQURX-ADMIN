@@ -6,7 +6,7 @@ import {
   ArrowLeft, Clock, User
 } from 'lucide-react';
 
-const BASE_URL = 'https://squrx-backend.onrender.com/api/v1';
+import { API_BASE_URL as BASE_URL } from '../config/api';
 
 const CATEGORIES = ['career', 'guide', 'news', 'onboarding', 'tips', 'announcement', 'other'];
 

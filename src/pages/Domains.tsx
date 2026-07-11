@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Globe, Plus, AlertCircle, Search } from 'lucide-react';
+import { API_BASE_URL } from '../config/api';
 
 interface Domain {
   _id: string;
@@ -36,7 +37,7 @@ export default function Domains() {
   const fetchDomains = async () => {
     try {
       setLoading(true);
-      let url = 'https://squrx-backend.onrender.com/api/v1/admin/domains';
+      let url = `${API_BASE_URL}/admin/domains`;
       if (debouncedSearch.trim()) {
         url += `?search=${encodeURIComponent(debouncedSearch.trim())}`;
       }
@@ -66,7 +67,7 @@ export default function Domains() {
 
     try {
       setIsAdding(true);
-      const res = await fetch('https://squrx-backend.onrender.com/api/v1/admin/domains', {
+      const res = await fetch(`${API_BASE_URL}/admin/domains`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ name: newDomainName, isActive: true })
@@ -90,7 +91,7 @@ export default function Domains() {
       // Optimistic update
       setDomains(domains.map(d => d._id === id ? { ...d, isActive: !currentStatus } : d));
       
-      const res = await fetch(`https://squrx-backend.onrender.com/api/v1/admin/domains/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/admin/domains/${id}`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify({ isActive: !currentStatus })
