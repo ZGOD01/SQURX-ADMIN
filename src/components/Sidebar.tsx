@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     ShieldCheck, BookOpen, Settings, LogOut, Calendar, Globe, Newspaper, Clock, SlidersHorizontal,
-    Home, Users, FileText, BarChart2,
+    Home, Users, BarChart2,
     Briefcase
 } from 'lucide-react';
 import { clsx } from 'clsx';
