@@ -11,6 +11,11 @@ import {
 import { API_BASE_URL as BASE_URL } from '../config/api';
 const LIMIT = 10000;
 
+interface SalaryObj {
+    amount?: number | string;
+    currency?: string | { _id: string; code: string; symbol: string; name: string };
+}
+
 interface User {
     _id: string;
     fullName: string;
@@ -19,8 +24,18 @@ interface User {
     role: 'student' | 'recruiter' | 'consultation';
     isVerified: boolean;
     isActive: boolean;
+    currentSalary?: SalaryObj;
+    expectedSalary?: SalaryObj;
     createdAt: string;
     updatedAt: string;
+}
+
+interface Currency {
+    _id: string;
+    name: string;
+    code: string;
+    symbol: string;
+    isActive: boolean;
 }
 
 interface ToastMessage {
@@ -32,6 +47,7 @@ interface ToastMessage {
 export default function UserManagement() {
     // Core List State
     const [users, setUsers] = useState<User[]>([]);
+    const [currencies, setCurrencies] = useState<Currency[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -71,7 +87,11 @@ export default function UserManagement() {
         mobile: '',
         role: 'student' as 'student' | 'recruiter' | 'consultation',
         isVerified: false,
-        isActive: true
+        isActive: true,
+        currentSalaryAmount: '',
+        currentSalaryCurrency: '',
+        expectedSalaryAmount: '',
+        expectedSalaryCurrency: ''
     });
 
     // Toast Notifications State
@@ -97,6 +117,22 @@ export default function UserManagement() {
         'Authorization': `Bearer ${sessionStorage.getItem('adminToken')}`,
         'Content-Type': 'application/json'
     });
+
+    // Fetch Currencies for Salary selection
+    useEffect(() => {
+        const fetchCurrencies = async () => {
+            try {
+                const res = await fetch(`${BASE_URL}/admin/currencies?isActive=true`, { headers: getHeaders() });
+                const json = await res.json();
+                if (json.success && Array.isArray(json.data)) {
+                    setCurrencies(json.data);
+                }
+            } catch {
+                // fallback gracefully
+            }
+        };
+        fetchCurrencies();
+    }, []);
 
     // Close click-away listeners
     useEffect(() => {
@@ -339,13 +375,24 @@ export default function UserManagement() {
     // Open edit modal and populate state
     const openEditModal = (user: User) => {
         setShowEditModal(user);
+        const currSalCurrency = typeof user.currentSalary?.currency === 'object' 
+            ? user.currentSalary.currency._id 
+            : (user.currentSalary?.currency || '');
+        const expSalCurrency = typeof user.expectedSalary?.currency === 'object' 
+            ? user.expectedSalary.currency._id 
+            : (user.expectedSalary?.currency || '');
+
         setEditData({
             fullName: user.fullName,
             email: user.email,
             mobile: user.mobile || '',
             role: user.role,
             isVerified: user.isVerified,
-            isActive: user.isActive
+            isActive: user.isActive,
+            currentSalaryAmount: user.currentSalary?.amount !== undefined ? String(user.currentSalary.amount) : '',
+            currentSalaryCurrency: currSalCurrency,
+            expectedSalaryAmount: user.expectedSalary?.amount !== undefined ? String(user.expectedSalary.amount) : '',
+            expectedSalaryCurrency: expSalCurrency
         });
         setActiveDropdownUser(null);
     };
@@ -360,17 +407,33 @@ export default function UserManagement() {
 
         setIsSaving(true);
         try {
+            const bodyPayload: Record<string, unknown> = {
+                fullName: editData.fullName.trim(),
+                email: editData.email.trim(),
+                mobile: editData.mobile.trim() || undefined,
+                role: editData.role,
+                isVerified: editData.isVerified,
+                isActive: editData.isActive
+            };
+
+            if (editData.currentSalaryAmount || editData.currentSalaryCurrency) {
+                bodyPayload.currentSalary = {
+                    amount: editData.currentSalaryAmount ? Number(editData.currentSalaryAmount) : 0,
+                    currency: editData.currentSalaryCurrency || undefined
+                };
+            }
+
+            if (editData.expectedSalaryAmount || editData.expectedSalaryCurrency) {
+                bodyPayload.expectedSalary = {
+                    amount: editData.expectedSalaryAmount ? Number(editData.expectedSalaryAmount) : 0,
+                    currency: editData.expectedSalaryCurrency || undefined
+                };
+            }
+
             const res = await fetch(`${BASE_URL}/admin/users/${showEditModal._id}`, {
                 method: 'PUT',
                 headers: getHeaders(),
-                body: JSON.stringify({
-                    fullName: editData.fullName.trim(),
-                    email: editData.email.trim(),
-                    mobile: editData.mobile.trim() || undefined,
-                    role: editData.role,
-                    isVerified: editData.isVerified,
-                    isActive: editData.isActive
-                })
+                body: JSON.stringify(bodyPayload)
             });
             const data = await res.json();
 
@@ -952,14 +1015,15 @@ export default function UserManagement() {
             {/* Edit User Modal */}
             {showEditModal && (
                 <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 transition-all duration-300 animate-in fade-in">
-                    <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-gray-100 shadow-2xl relative animate-in zoom-in-95 duration-200">
+                    <div className="bg-white rounded-3xl max-w-md w-full border border-gray-100 shadow-2xl relative animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
                         <button 
                             onClick={() => setShowEditModal(null)}
-                            className="absolute top-5 right-5 p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-all cursor-pointer"
+                            className="absolute top-5 right-5 p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-all cursor-pointer z-10"
                         >
                             <X className="w-4 h-4" />
                         </button>
 
+                        <div className="overflow-y-auto flex-1 p-6 sm:p-8">
                         <div className="mb-6 flex gap-3.5 items-center">
                             <div className="w-11 h-11 bg-gray-900 rounded-2xl flex items-center justify-center text-white">
                                 <Edit3 className="w-5 h-5" />
@@ -1026,6 +1090,58 @@ export default function UserManagement() {
                                 </div>
                             </div>
 
+                            {/* Salary Fields */}
+                            <div className="space-y-3 pt-1 border-t border-gray-100">
+                                <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider">Salary Details</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <span className="block text-[10px] font-bold text-gray-400 mb-1">Current Salary</span>
+                                        <div className="flex gap-1.5">
+                                            <input 
+                                                type="number"
+                                                placeholder="Amount"
+                                                value={editData.currentSalaryAmount}
+                                                onChange={(e) => setEditData(p => ({ ...p, currentSalaryAmount: e.target.value }))}
+                                                className="w-1/2 bg-gray-50/50 px-3 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black"
+                                            />
+                                            <select
+                                                value={editData.currentSalaryCurrency}
+                                                onChange={(e) => setEditData(p => ({ ...p, currentSalaryCurrency: e.target.value }))}
+                                                className="w-1/2 bg-gray-50/50 px-2 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black"
+                                            >
+                                                <option value="">Currency</option>
+                                                {currencies.map(c => (
+                                                    <option key={c._id} value={c._id}>{c.code} ({c.symbol})</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <span className="block text-[10px] font-bold text-gray-400 mb-1">Expected Salary</span>
+                                        <div className="flex gap-1.5">
+                                            <input 
+                                                type="number"
+                                                placeholder="Amount"
+                                                value={editData.expectedSalaryAmount}
+                                                onChange={(e) => setEditData(p => ({ ...p, expectedSalaryAmount: e.target.value }))}
+                                                className="w-1/2 bg-gray-50/50 px-3 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black"
+                                            />
+                                            <select
+                                                value={editData.expectedSalaryCurrency}
+                                                onChange={(e) => setEditData(p => ({ ...p, expectedSalaryCurrency: e.target.value }))}
+                                                className="w-1/2 bg-gray-50/50 px-2 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black"
+                                            >
+                                                <option value="">Currency</option>
+                                                {currencies.map(c => (
+                                                    <option key={c._id} value={c._id}>{c.code} ({c.symbol})</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* Access Switches */}
                             <div className="grid grid-cols-2 gap-4 pt-2">
                                 <div className="bg-gray-50 p-4.5 rounded-2xl border border-gray-100 flex flex-col items-center justify-center">
@@ -1083,6 +1199,7 @@ export default function UserManagement() {
                                 </button>
                             </div>
                         </form>
+                        </div>
                     </div>
                 </div>
             )}

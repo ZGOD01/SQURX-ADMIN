@@ -112,6 +112,10 @@ export default function Jobs() {
   const [statusFilter, setStatusFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [orgFilter, setOrgFilter] = useState('');
+  const [minSalaryFilter, setMinSalaryFilter] = useState('');
+  const [maxSalaryFilter, setMaxSalaryFilter] = useState('');
+  const [currencyFilter, setCurrencyFilter] = useState('');
+  const [currencies, setCurrencies] = useState<{ _id: string; code: string; name: string }[]>([]);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -173,6 +177,9 @@ export default function Jobs() {
       if (sourceFilter) params.set('source', sourceFilter);
       if (orgFilter) params.set('organizationSlug', orgFilter);
       if (search) params.set('search', search);
+      if (minSalaryFilter) params.set('minSalary', minSalaryFilter);
+      if (maxSalaryFilter) params.set('maxSalary', maxSalaryFilter);
+      if (currencyFilter) params.set('currency', currencyFilter);
       params.set('page', String(page));
       params.set('limit', String(LIMIT));
 
@@ -189,7 +196,7 @@ export default function Jobs() {
     } finally {
       setJobsLoading(false);
     }
-  }, [statusFilter, sourceFilter, orgFilter, search, page]);
+  }, [statusFilter, sourceFilter, orgFilter, search, minSalaryFilter, maxSalaryFilter, currencyFilter, page]);
 
   const fetchSettings = useCallback(async () => {
     setSettingsLoading(true);
@@ -243,6 +250,16 @@ export default function Jobs() {
   useEffect(() => {
     fetchStats();
     fetchUsage();
+
+    // Fetch currencies for filter dropdown
+    fetch(`${API_BASE}/admin/currencies?isActive=true`, { headers: getHeaders() })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.data)) {
+          setCurrencies(data.data);
+        }
+      })
+      .catch(() => {});
   }, [fetchStats, fetchUsage]);
 
   useEffect(() => {
@@ -431,8 +448,8 @@ export default function Jobs() {
       {/* Browse Jobs Tab */}
       {activeTab === 'browse' && (
         <>
-          <div className="bg-white rounded-3xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 flex flex-col lg:flex-row lg:items-center gap-3 mb-6">
-            <form onSubmit={handleSearchSubmit} className="relative flex-1">
+          <div className="bg-white rounded-3xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 flex flex-wrap items-center gap-3 mb-6">
+            <form onSubmit={handleSearchSubmit} className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
@@ -459,12 +476,34 @@ export default function Jobs() {
               <option value="">All Sources</option>
               {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            <select
+              value={currencyFilter}
+              onChange={e => { setCurrencyFilter(e.target.value); setPage(1); }}
+              className="px-4 py-3 bg-gray-50 border border-transparent rounded-2xl text-[13px] font-medium text-gray-900 focus:outline-none focus:ring-4 focus:ring-gray-100"
+            >
+              <option value="">All Currencies</option>
+              {currencies.map(c => <option key={c._id} value={c.code}>{c.code}</option>)}
+            </select>
+            <input
+              type="number"
+              placeholder="Min Salary"
+              value={minSalaryFilter}
+              onChange={e => { setMinSalaryFilter(e.target.value); setPage(1); }}
+              className="px-4 py-3 bg-gray-50 border border-transparent rounded-2xl text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-gray-100 w-32"
+            />
+            <input
+              type="number"
+              placeholder="Max Salary"
+              value={maxSalaryFilter}
+              onChange={e => { setMaxSalaryFilter(e.target.value); setPage(1); }}
+              className="px-4 py-3 bg-gray-50 border border-transparent rounded-2xl text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-gray-100 w-32"
+            />
             <input
               type="text"
               placeholder="Organization slug"
               value={orgFilter}
               onChange={e => { setOrgFilter(e.target.value); setPage(1); }}
-              className="px-4 py-3 bg-gray-50 border border-transparent rounded-2xl text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-gray-100 w-48"
+              className="px-4 py-3 bg-gray-50 border border-transparent rounded-2xl text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-gray-100 w-40 min-w-0"
             />
           </div>
 

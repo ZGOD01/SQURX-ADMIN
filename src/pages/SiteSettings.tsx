@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  GraduationCap, Wrench, Briefcase, MapPin, TrendingUp,
+  GraduationCap, Wrench, Briefcase, MapPin, TrendingUp, Coins,
   Search, RefreshCw, AlertCircle, Loader2, CheckCircle,
-  XCircle, Database, Plus, Edit3, Trash2, X
+  XCircle, Database, Plus, Edit3, Trash2, X, Sparkles
 } from 'lucide-react';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -12,6 +12,8 @@ import { API_BASE_URL as BASE_URL } from '../config/api';
 interface LookupItem {
   _id: string;
   name: string;
+  code?: string;
+  symbol?: string;
   isActive: boolean;
 }
 
@@ -22,7 +24,7 @@ interface ApiResponse {
   data: LookupItem[];
 }
 
-type SectionKey = 'educations' | 'skills' | 'job-types' | 'locations' | 'experience-levels';
+type SectionKey = 'educations' | 'skills' | 'job-types' | 'locations' | 'experience-levels' | 'currencies';
 
 interface SectionState {
   data: LookupItem[];
@@ -99,6 +101,15 @@ const SECTIONS: {
     endpoint: '/experience-levels',
     accentColor: 'bg-rose-50 text-rose-600 border-rose-100',
     badgeColor: 'bg-rose-100 text-rose-700',
+  },
+  {
+    key: 'currencies',
+    label: 'Currencies',
+    icon: Coins,
+    description: 'System currencies available for user salaries and job listings.',
+    endpoint: '/currencies',
+    accentColor: 'bg-teal-50 text-teal-600 border-teal-100',
+    badgeColor: 'bg-teal-100 text-teal-700',
   },
 ];
 
@@ -188,6 +199,8 @@ function LookupTable({
     );
   }
 
+  const isCurrencySection = items.some(item => item.code !== undefined || item.symbol !== undefined);
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left border-collapse">
@@ -195,6 +208,12 @@ function LookupTable({
           <tr className="border-b border-gray-100 bg-gray-50/60">
             <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider w-10">#</th>
             <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Name</th>
+            {isCurrencySection && (
+              <>
+                <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Code</th>
+                <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Symbol</th>
+              </>
+            )}
             <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">ID</th>
             <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Status</th>
             <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider text-right w-24">Actions</th>
@@ -207,6 +226,20 @@ function LookupTable({
               <td className="px-4 py-4">
                 <span className="text-[14px] font-bold text-gray-900">{item.name || '—'}</span>
               </td>
+              {isCurrencySection && (
+                <>
+                  <td className="px-4 py-4">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-extrabold bg-gray-100 text-gray-900 font-mono">
+                      {item.code || '—'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="text-sm font-bold text-gray-700">
+                      {item.symbol || '—'}
+                    </span>
+                  </td>
+                </>
+              )}
               <td className="px-4 py-4">
                 <code className="text-[11px] font-mono text-gray-400 bg-gray-50 border border-gray-100 px-2 py-1 rounded-lg">
                   {item._id}
@@ -329,6 +362,19 @@ function SectionCard({
               <span>Add Entry</span>
             </button>
           )}
+          {section.key === 'currencies' && !state.loading && !state.error && (
+            <button
+              onClick={() => {
+                const event = new CustomEvent('seed-currencies');
+                window.dispatchEvent(event);
+              }}
+              title="Seed INR, USD, GBP, CAD defaults"
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold rounded-xl transition-all shadow-sm cursor-pointer shrink-0"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Seed Defaults</span>
+            </button>
+          )}
           <button
             onClick={onRefresh}
             disabled={state.loading}
@@ -388,6 +434,8 @@ export default function SiteSettings() {
   
   // Form states
   const [formName, setFormName] = useState('');
+  const [formCode, setFormCode] = useState('');
+  const [formSymbol, setFormSymbol] = useState('');
   const [formIsActive, setFormIsActive] = useState(true);
   
   // Toast notifications state
@@ -444,6 +492,34 @@ export default function SiteSettings() {
     fetchAll();
   }, [fetchAll]);
 
+  const handleSeedCurrencies = useCallback(async () => {
+    setIsSaving(true);
+    try {
+      const res = await fetch(`${BASE_URL}/admin/currencies/seed`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Default currencies (INR, USD, GBP, CAD) seeded successfully! 💰');
+        const currSec = SECTIONS.find((s) => s.key === 'currencies');
+        if (currSec) fetchSection(currSec);
+      } else {
+        showToast(data.message || 'Failed to seed currencies', 'error');
+      }
+    } catch {
+      showToast('Network error while seeding currencies', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [fetchSection]);
+
+  useEffect(() => {
+    const listener = () => handleSeedCurrencies();
+    window.addEventListener('seed-currencies', listener);
+    return () => window.removeEventListener('seed-currencies', listener);
+  }, [handleSeedCurrencies]);
+
   const handleRefreshAll = async () => {
     setIsRefreshingAll(true);
     await fetchAll();
@@ -464,13 +540,19 @@ export default function SiteSettings() {
     const activeSection = SECTIONS.find((s) => s.key === activeTab)!;
 
     try {
+      const bodyPayload: Record<string, unknown> = {
+        name: formName.trim(),
+        isActive: formIsActive,
+      };
+      if (activeSection.key === 'currencies') {
+        bodyPayload.code = formCode.trim().toUpperCase();
+        bodyPayload.symbol = formSymbol.trim();
+      }
+
       const res = await fetch(`${BASE_URL}/admin/${activeSection.key}`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({
-          name: formName.trim(),
-          isActive: formIsActive
-        })
+        body: JSON.stringify(bodyPayload)
       });
       const data = await res.json();
 
@@ -478,6 +560,8 @@ export default function SiteSettings() {
         showToast('Lookup entry created successfully! 🎉');
         setShowAddModal(false);
         setFormName('');
+        setFormCode('');
+        setFormSymbol('');
         setFormIsActive(true);
         fetchSection(activeSection);
       } else {
@@ -494,6 +578,8 @@ export default function SiteSettings() {
   const openEditModal = (item: LookupItem) => {
     setShowEditModal(item);
     setFormName(item.name);
+    setFormCode(item.code || '');
+    setFormSymbol(item.symbol || '');
     setFormIsActive(item.isActive);
   };
 
@@ -507,13 +593,19 @@ export default function SiteSettings() {
     const activeSection = SECTIONS.find((s) => s.key === activeTab)!;
 
     try {
+      const bodyPayload: Record<string, unknown> = {
+        name: formName.trim(),
+        isActive: formIsActive,
+      };
+      if (activeSection.key === 'currencies') {
+        bodyPayload.code = formCode.trim().toUpperCase();
+        bodyPayload.symbol = formSymbol.trim();
+      }
+
       const res = await fetch(`${BASE_URL}/admin/${activeSection.key}/${showEditModal._id}`, {
         method: 'PUT',
         headers: getHeaders(),
-        body: JSON.stringify({
-          name: formName.trim(),
-          isActive: formIsActive
-        })
+        body: JSON.stringify(bodyPayload)
       });
       const data = await res.json();
 
@@ -521,6 +613,8 @@ export default function SiteSettings() {
         showToast('Lookup entry updated successfully!');
         setShowEditModal(null);
         setFormName('');
+        setFormCode('');
+        setFormSymbol('');
         fetchSection(activeSection);
       } else {
         showToast(data.message || 'Failed to update entry', 'error');
@@ -657,12 +751,6 @@ export default function SiteSettings() {
             <h2 className="text-[11px] font-bold text-gray-400 tracking-widest uppercase select-none">
               Lookup Categories
             </h2>
-            <div className="flex items-center gap-1">
-              <span className="text-[11px] font-semibold text-gray-400">API Source:</span>
-              <code className="text-[10px] font-mono text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-lg select-all">
-                /api/v1/admin/{activeSection.key}
-              </code>
-            </div>
           </div>
           <nav className="flex flex-wrap gap-2 p-1">
             {SECTIONS.map((section) => {
@@ -740,12 +828,39 @@ export default function SiteSettings() {
                 <input 
                   type="text"
                   required
-                  placeholder="e.g. Master of Business Administration"
+                  placeholder={activeSection.key === 'currencies' ? "e.g. Euro" : "e.g. Master of Business Administration"}
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 placeholder-gray-400 text-sm font-semibold transition-all"
                 />
               </div>
+
+              {activeSection.key === 'currencies' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">ISO Code</label>
+                    <input 
+                      type="text"
+                      required
+                      placeholder="e.g. EUR"
+                      value={formCode}
+                      onChange={(e) => setFormCode(e.target.value)}
+                      className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 placeholder-gray-400 text-sm font-semibold transition-all uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Symbol</label>
+                    <input 
+                      type="text"
+                      required
+                      placeholder="e.g. €"
+                      value={formSymbol}
+                      onChange={(e) => setFormSymbol(e.target.value)}
+                      className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 placeholder-gray-400 text-sm font-semibold transition-all"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2.5">Initial Status</label>
@@ -836,6 +951,33 @@ export default function SiteSettings() {
                   className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 text-sm font-semibold transition-all"
                 />
               </div>
+
+              {activeSection.key === 'currencies' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">ISO Code</label>
+                    <input 
+                      type="text"
+                      required
+                      placeholder="e.g. EUR"
+                      value={formCode}
+                      onChange={(e) => setFormCode(e.target.value)}
+                      className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 text-sm font-semibold transition-all uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Symbol</label>
+                    <input 
+                      type="text"
+                      required
+                      placeholder="e.g. €"
+                      value={formSymbol}
+                      onChange={(e) => setFormSymbol(e.target.value)}
+                      className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 text-sm font-semibold transition-all"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2.5">Entry Status</label>
