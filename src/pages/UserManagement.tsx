@@ -16,7 +16,20 @@ interface SalaryObj {
     currency?: string | { _id: string; code: string; symbol: string; name: string };
 }
 
-interface User {
+export interface EducationHistoryItem {
+    _id?: string;
+    education: string | { _id: string; name: string };
+    university?: string | { _id: string; name: string };
+    course?: string | { _id: string; name: string };
+    specialization?: string | { _id: string; name: string };
+    courseType?: 'Full Time' | 'Part Time' | 'Distance Learning' | 'Correspondence';
+    startYear?: number;
+    endYear?: number;
+    gradingSystem?: 'Percentage' | 'CGPA' | 'GPA';
+    gradingValue?: number;
+}
+
+export interface User {
     _id: string;
     fullName: string;
     email: string;
@@ -26,6 +39,7 @@ interface User {
     isActive: boolean;
     currentSalary?: SalaryObj;
     expectedSalary?: SalaryObj;
+    educationHistory?: EducationHistoryItem[];
     createdAt: string;
     updatedAt: string;
 }

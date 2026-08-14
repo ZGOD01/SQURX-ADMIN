@@ -19,7 +19,7 @@ const navItems = [
     { name: 'Quizzes', path: '/quizzes', icon: Calendar },
     { name: 'Jobs', path: '/jobs', icon: Briefcase },
     { name: 'Domains', path: '/domains', icon: Globe },
-    { name: 'Time Slots', path: '/timeslots', icon: Clock },
+    { name: 'Consultation', path: '/timeslots', icon: Clock },
     { name: 'Site Setting', path: '/site-settings', icon: SlidersHorizontal },
 ];
 

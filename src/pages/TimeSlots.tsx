@@ -646,24 +646,39 @@ export default function TimeSlots() {
 
     setIsSaving(true);
     try {
+      // ── #51: Admin walk-in booking does NOT require a JWT ──────────────────
+      // This is an admin-initiated booking (walk-in / phone), NOT a self-login
+      // flow — no candidate Bearer token is expected by the backend contract.
+      const payload: Record<string, unknown> = {
+        fullName: bookData.fullName.trim(),
+        email: bookData.email.trim(),
+        mobile: bookData.mobile.trim(),
+        appointment: {
+          dateId: bookData.dateId,
+          timeId: bookData.timeId,
+        },
+      };
+      // ── #42 / #43: countryCode and country are optional — only include when
+      // the admin has actually provided a value (non-empty string). ───────────
+      if (bookData.countryCode.trim()) payload.countryCode = bookData.countryCode.trim();
+      if (bookData.country.trim()) payload.country = bookData.country.trim();
+
       const res = await fetch(`${BASE_URL}/admin/consultations/book`, {
         method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({
-          fullName: bookData.fullName.trim(),
-          email: bookData.email.trim(),
-          mobile: bookData.mobile.trim(),
-          countryCode: bookData.countryCode,
-          country: bookData.country,
-          appointment: {
-            dateId: bookData.dateId,
-            timeId: bookData.timeId
-          }
-        })
+        headers: { 'Content-Type': 'application/json' }, // no Authorization header
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
+
       if (data.success || res.status === 201) {
-        showToast('Walk-in consultation booked successfully! 📅');
+        // ── #50: Consume response {user, consultation} ─────────────────────
+        // Show the confirmed user's name in the success message so the
+        // admin gets immediate acknowledgement of who was booked.
+        const bookedName =
+          data.data?.user?.fullName ||
+          data.data?.consultation?.fullName ||
+          bookData.fullName.trim();
+        showToast(`Consultation booked for ${bookedName}! 📅`);
         setShowBookModal(false);
         setBookData({ fullName: '', email: '', mobile: '', countryCode: '+91', country: 'India', dateId: '', timeId: '' });
         fetchConsultations(1);
