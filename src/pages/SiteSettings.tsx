@@ -608,13 +608,21 @@ export default function SiteSettings() {
     setHeroLoading(true);
     setHeroError(null);
     try {
-      const res = await fetch(`${BASE_URL}/admin/hero-sections`, {
+      // 1. Try public/live endpoint first (where candidate homepage punchlines are served)
+      let res = await fetch(`${BASE_URL}/hero-sections`, {
         headers: getHeaders(),
       });
+      // 2. If /hero-sections is not ok, fallback to /admin/hero-sections
+      if (!res.ok) {
+        res = await fetch(`${BASE_URL}/admin/hero-sections`, {
+          headers: getHeaders(),
+        });
+      }
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const json: ApiResponse<HeroSectionItem[]> = await res.json();
       if (!json.success) throw new Error(json.message || 'Failed to fetch hero sections');
-      const sorted = (Array.isArray(json.data) ? json.data : []).sort((a, b) => a.displayOrder - b.displayOrder);
+      const list = Array.isArray(json.data) ? json.data : [];
+      const sorted = [...list].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
       setHeroSections(sorted);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -638,11 +646,18 @@ export default function SiteSettings() {
         displayOrder: Number(heroFormDisplayOrder),
       };
 
-      const res = await fetch(`${BASE_URL}/admin/hero-sections`, {
+      let res = await fetch(`${BASE_URL}/admin/hero-sections`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(bodyPayload),
       });
+      if (res.status === 404) {
+        res = await fetch(`${BASE_URL}/hero-sections`, {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify(bodyPayload),
+        });
+      }
       const data = await res.json();
 
       if (data.success) {
@@ -678,11 +693,18 @@ export default function SiteSettings() {
         displayOrder: Number(heroFormDisplayOrder),
       };
 
-      const res = await fetch(`${BASE_URL}/admin/hero-sections/${showHeroEditModal._id}`, {
+      let res = await fetch(`${BASE_URL}/admin/hero-sections/${showHeroEditModal._id}`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify(bodyPayload),
       });
+      if (res.status === 404) {
+        res = await fetch(`${BASE_URL}/hero-sections/${showHeroEditModal._id}`, {
+          method: 'PUT',
+          headers: getHeaders(),
+          body: JSON.stringify(bodyPayload),
+        });
+      }
       const data = await res.json();
 
       if (data.success) {
@@ -702,13 +724,22 @@ export default function SiteSettings() {
   const handleHeroToggleStatus = async (item: HeroSectionItem) => {
     setActionLoading(item._id);
     try {
-      const res = await fetch(`${BASE_URL}/admin/hero-sections/${item._id}`, {
+      let res = await fetch(`${BASE_URL}/admin/hero-sections/${item._id}`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify({
           isActive: !item.isActive,
         }),
       });
+      if (res.status === 404) {
+        res = await fetch(`${BASE_URL}/hero-sections/${item._id}`, {
+          method: 'PUT',
+          headers: getHeaders(),
+          body: JSON.stringify({
+            isActive: !item.isActive,
+          }),
+        });
+      }
       const data = await res.json();
       if (data.success) {
         showToast(item.isActive ? 'Punchline deactivated' : 'Punchline activated');
@@ -727,10 +758,16 @@ export default function SiteSettings() {
     if (!showHeroDeleteModal) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`${BASE_URL}/admin/hero-sections/${showHeroDeleteModal._id}`, {
+      let res = await fetch(`${BASE_URL}/admin/hero-sections/${showHeroDeleteModal._id}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });
+      if (res.status === 404) {
+        res = await fetch(`${BASE_URL}/hero-sections/${showHeroDeleteModal._id}`, {
+          method: 'DELETE',
+          headers: getHeaders(),
+        });
+      }
       const data = await res.json();
       if (data.success) {
         showToast('Hero section deleted successfully.');
@@ -762,9 +799,17 @@ export default function SiteSettings() {
         Object.entries(extraParams).forEach(([k, v]) => { if (v !== '') params.set(k, v); });
       }
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`${BASE_URL}/admin/${section.key}${qs}`, {
+      let res = await fetch(`${BASE_URL}/admin/${section.key}${qs}`, {
         headers: getHeaders()
       });
+      if (!res.ok) {
+        const fallbackRes = await fetch(`${BASE_URL}/${section.key}${qs}`, {
+          headers: getHeaders()
+        });
+        if (fallbackRes.ok) {
+          res = fallbackRes;
+        }
+      }
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const json: ApiResponse<LookupItem[]> = await res.json();
       if (!json.success) throw new Error(json.message || 'API returned failure');
