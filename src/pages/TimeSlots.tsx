@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Search, RefreshCw, X, Save, AlertCircle, Loader2, CheckCircle,
-  ChevronLeft, ChevronRight, CalendarDays, Clock, Trash, Settings, UserPlus, User
+  ChevronLeft, ChevronRight, CalendarDays, Clock, Trash, Settings, UserPlus, User,
+  Pencil, Calendar
 } from 'lucide-react';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -54,6 +55,7 @@ interface Consultation {
     timeId?: string;
   };
   status?: string;
+  notes?: string;
   createdAt?: string;
 }
 
@@ -444,6 +446,19 @@ export default function TimeSlots() {
   const [consultationPage, setConsultationPage] = useState(1);
   const [consultationMeta, setConsultationMeta] = useState<Meta>({ total: 0, page: 1, limit: 10, totalPages: 1 });
 
+  // Edit Consultation State
+  const [showEditConsultationModal, setShowEditConsultationModal] = useState<Consultation | null>(null);
+  const [editConsultationForm, setEditConsultationForm] = useState({
+    status: 'pending',
+    notes: '',
+    enableReschedule: false,
+    dateId: '',
+    timeId: ''
+  });
+  const [editConsultationAvailableSlots, setEditConsultationAvailableSlots] = useState<TimeSlot[]>([]);
+  const [isUpdatingConsultation, setIsUpdatingConsultation] = useState(false);
+  const [isDeletingConsultationId, setIsDeletingConsultationId] = useState<string | null>(null);
+
   // Walk-in booking modal state
   const [showBookModal, setShowBookModal] = useState(false);
   const [bookData, setBookData] = useState({
@@ -536,6 +551,48 @@ export default function TimeSlots() {
   };
 
   // ── GET Consultations ────────────────────────────────────────────────────────
+  // ─── Consultation Update & Delete APIs ──────────────────────────────────
+  const handleUpdateConsultation = async (
+    id: string,
+    payload: {
+      status?: string;
+      reschedule?: {
+        dateId: string;
+        timeId: string;
+      };
+      notes?: string;
+    }
+  ) => {
+    const res = await fetch(`${BASE_URL}/admin/consultations/${id}`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to update consultation');
+    }
+
+    return data.data;
+  };
+
+  const handleDeleteConsultation = async (id: string) => {
+    const res = await fetch(`${BASE_URL}/admin/consultations/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+
+    const data = await res.json();
+
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to delete consultation');
+    }
+
+    return data.data;
+  };
+
   const fetchConsultations = useCallback(async (p = consultationPage) => {
     setConsultationsLoading(true);
     try {
@@ -756,6 +813,106 @@ export default function TimeSlots() {
       showToast('Network error occurred', 'error');
     } finally {
       setIsDeletingId(null);
+    }
+  };
+
+  // ─── Edit & Delete Consultation Handlers ────────────────────────────────
+  const openEditConsultation = (c: Consultation) => {
+    setShowEditConsultationModal(c);
+    const curStatus = (c.status || 'pending').toLowerCase();
+    setEditConsultationForm({
+      status: curStatus,
+      notes: c.notes || '',
+      enableReschedule: false,
+      dateId: '',
+      timeId: ''
+    });
+    setEditConsultationAvailableSlots([]);
+    if (groups.length === 0) {
+      fetch(`${BASE_URL}/admin/time-slots?limit=100`, { headers: getHeaders() })
+        .then(r => r.json())
+        .then(d => {
+          if (d.success) {
+            const list: DateGroup[] = d.data?.timeSlots || d.data || [];
+            setGroups(list);
+          }
+        })
+        .catch(() => {});
+    }
+  };
+
+  const handleEditConsultationSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showEditConsultationModal) return;
+
+    const original = showEditConsultationModal;
+    const originalStatus = (original.status || 'pending').toLowerCase();
+    const originalNotes = original.notes || '';
+
+    const payload: {
+      status?: string;
+      notes?: string;
+      reschedule?: {
+        dateId: string;
+        timeId: string;
+      };
+    } = {};
+
+    // Compare and send changed fields only
+    if (editConsultationForm.status && editConsultationForm.status !== originalStatus) {
+      payload.status = editConsultationForm.status;
+    }
+
+    const trimmedNotes = editConsultationForm.notes.trim();
+    if (trimmedNotes !== originalNotes.trim()) {
+      payload.notes = trimmedNotes;
+    }
+
+    if (editConsultationForm.enableReschedule) {
+      if (!editConsultationForm.dateId || !editConsultationForm.timeId) {
+        showToast('Please select both a date and an available time slot to reschedule', 'error');
+        return;
+      }
+      payload.reschedule = {
+        dateId: editConsultationForm.dateId,
+        timeId: editConsultationForm.timeId,
+      };
+    }
+
+    // Do NOT submit empty payload
+    if (Object.keys(payload).length === 0) {
+      showToast('No changes detected to update', 'error');
+      return;
+    }
+
+    setIsUpdatingConsultation(true);
+    try {
+      await handleUpdateConsultation(original._id, payload);
+      showToast('Consultation updated successfully! 🎉');
+      setShowEditConsultationModal(null);
+      await fetchConsultations(consultationPage);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to update consultation';
+      showToast(message, 'error');
+    } finally {
+      setIsUpdatingConsultation(false);
+    }
+  };
+
+  const onDeleteConsultation = async (c: Consultation) => {
+    const candidateName = c.user?.fullName || 'this candidate';
+    if (!confirm(`Are you sure you want to delete the consultation for ${candidateName}?`)) return;
+
+    setIsDeletingConsultationId(c._id);
+    try {
+      await handleDeleteConsultation(c._id);
+      showToast('Consultation deleted successfully.');
+      await fetchConsultations(consultationPage);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to delete consultation';
+      showToast(message, 'error');
+    } finally {
+      setIsDeletingConsultationId(null);
     }
   };
 
@@ -1080,6 +1237,7 @@ export default function TimeSlots() {
                       <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Country</th>
                       <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Appointment Date & Time</th>
                       <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -1099,9 +1257,47 @@ export default function TimeSlots() {
                           {c.appointment?.date || '—'} {c.appointment?.time ? `@ ${c.appointment.time}` : ''}
                         </td>
                         <td className="px-6 py-4">
-                          <span className="inline-flex px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-700 capitalize">
-                            {c.status || 'Confirmed'}
+                          <span className={`inline-flex px-2.5 py-1 rounded-lg text-[11px] font-bold capitalize ${
+                            c.status?.toLowerCase() === 'completed'
+                              ? 'bg-blue-50 text-blue-700'
+                              : c.status?.toLowerCase() === 'cancelled'
+                              ? 'bg-red-50 text-red-700'
+                              : c.status?.toLowerCase() === 'confirmed'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-amber-50 text-amber-700'
+                          }`}>
+                            {c.status || 'Pending'}
                           </span>
+                          {c.notes && (
+                            <p className="text-[11px] text-gray-400 mt-1 max-w-xs truncate" title={c.notes}>
+                              <span className="font-medium text-gray-600">Notes:</span> {c.notes}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openEditConsultation(c)}
+                              title="Edit Consultation"
+                              className="p-2 rounded-xl bg-white border border-gray-200 text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-all shadow-sm cursor-pointer"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteConsultation(c)}
+                              disabled={isDeletingConsultationId === c._id}
+                              title="Delete Consultation"
+                              className="p-2 rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+                            >
+                              {isDeletingConsultationId === c._id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1298,6 +1494,195 @@ export default function TimeSlots() {
           onClose={() => setView('list')} 
           isSaving={isSaving} 
         />
+      )}
+
+      {/* EDIT CONSULTATION MODAL */}
+      {showEditConsultationModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 transition-all duration-300 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-gray-100 shadow-2xl relative animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+            <button 
+              onClick={() => setShowEditConsultationModal(null)}
+              className="absolute top-5 right-5 p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-all cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="mb-5 flex gap-3.5 items-center shrink-0">
+              <div className="w-11 h-11 bg-gray-900 rounded-2xl flex items-center justify-center text-white">
+                <Pencil className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-[17px] font-extrabold text-gray-900">Edit Consultation</h2>
+                <p className="text-[12.5px] font-semibold text-gray-400 mt-0.5">
+                  {showEditConsultationModal.user?.fullName || 'Candidate'}
+                </p>
+              </div>
+            </div>
+
+            {/* Candidate & Appointment summary */}
+            <div className="bg-gray-50/70 p-3.5 rounded-2xl border border-gray-100 mb-4 text-xs shrink-0">
+              <div className="grid grid-cols-2 gap-2 text-gray-600">
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Email</span>
+                  <span className="font-semibold text-gray-900 truncate block">{showEditConsultationModal.user?.email || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Mobile</span>
+                  <span className="font-semibold text-gray-900 truncate block">{showEditConsultationModal.user?.mobile || '—'}</span>
+                </div>
+                <div className="col-span-2 pt-1 border-t border-gray-200/50">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Current Appointment</span>
+                  <span className="font-semibold text-gray-900">
+                    {showEditConsultationModal.appointment?.date || '—'} {showEditConsultationModal.appointment?.time ? `@ ${showEditConsultationModal.appointment.time}` : ''}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleEditConsultationSubmit} className="space-y-4 flex-1 overflow-y-auto pr-1">
+              {/* 1. Status Selection */}
+              <div>
+                <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Consultation Status
+                </label>
+                <select
+                  value={editConsultationForm.status}
+                  onChange={e => setEditConsultationForm(p => ({ ...p, status: e.target.value }))}
+                  className="w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-black capitalize"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+
+              {/* 2. Notes */}
+              <div>
+                <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Notes / Remarks
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Add notes (e.g. called to confirm, candidate requested reschedule)..."
+                  value={editConsultationForm.notes}
+                  onChange={e => setEditConsultationForm(p => ({ ...p, notes: e.target.value }))}
+                  className="w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-black resize-none"
+                />
+              </div>
+
+              {/* 3. Optional Reschedule Section */}
+              <div className="pt-2 border-t border-gray-100">
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={editConsultationForm.enableReschedule}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setEditConsultationForm(p => ({
+                        ...p,
+                        enableReschedule: checked,
+                        dateId: checked ? p.dateId : '',
+                        timeId: checked ? p.timeId : ''
+                      }));
+                      if (!checked) {
+                        setEditConsultationAvailableSlots([]);
+                      }
+                    }}
+                    className="w-4 h-4 rounded text-black focus:ring-black border-gray-300"
+                  />
+                  <span className="text-[13px] font-bold text-gray-800 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-gray-500" /> Reschedule Appointment
+                  </span>
+                </label>
+
+                {editConsultationForm.enableReschedule && (
+                  <div className="mt-3 space-y-3 pl-6 border-l-2 border-gray-200">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                        Select New Date <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required={editConsultationForm.enableReschedule}
+                        value={editConsultationForm.dateId}
+                        onChange={e => {
+                          const dateId = e.target.value;
+                          const group = groups.find(g => g._id === dateId);
+                          const avail = group ? group.slots.filter(s => s.isAvailable) : [];
+                          setEditConsultationAvailableSlots(avail);
+                          setEditConsultationForm(p => ({ ...p, dateId, timeId: '' }));
+                        }}
+                        className="w-full bg-gray-50/50 px-3 py-2 rounded-xl border border-gray-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black"
+                      >
+                        <option value="">Choose Date...</option>
+                        {groups.map(g => (
+                          <option key={g._id} value={g._id}>
+                            {new Date(g.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {editConsultationForm.dateId && (
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                          Select New Time Slot <span className="text-red-500">*</span>
+                        </label>
+                        {editConsultationAvailableSlots.length === 0 ? (
+                          <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded-lg">
+                            No available time slots on this date.
+                          </p>
+                        ) : (
+                          <select
+                            required={editConsultationForm.enableReschedule}
+                            value={editConsultationForm.timeId}
+                            onChange={e => setEditConsultationForm(p => ({ ...p, timeId: e.target.value }))}
+                            className="w-full bg-gray-50/50 px-3 py-2 rounded-xl border border-gray-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black"
+                          >
+                            <option value="">Choose Available Slot Timing...</option>
+                            {editConsultationAvailableSlots.map((s, idx) => (
+                              <option key={s._id || idx} value={s._id || ''}>
+                                {s.time}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Buttons */}
+              <div className="flex gap-3 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditConsultationModal(null)}
+                  className="flex-1 py-3 bg-white border border-gray-200 text-gray-700 text-[13px] font-bold rounded-2xl hover:bg-gray-50 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingConsultation}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-gray-900 text-white text-[13px] font-bold rounded-2xl hover:bg-gray-800 transition-all shadow-lg disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {isUpdatingConsultation ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Saving…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>Update Consultation</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
