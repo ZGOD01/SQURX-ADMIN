@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Search, RefreshCw, X, Save, AlertCircle, Loader2, CheckCircle,
   ChevronLeft, ChevronRight, CalendarDays, Clock, Trash, Settings, UserPlus, User,
-  Pencil, Calendar
+  Pencil, Calendar, LayoutGrid, List as ListIcon
 } from 'lucide-react';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -46,6 +46,12 @@ interface Consultation {
     email?: string;
     mobile?: string;
   };
+  fullName?: string;
+  name?: string;
+  candidateName?: string;
+  email?: string;
+  mobile?: string;
+  phone?: string;
   country?: string;
   countryCode?: string;
   appointment?: {
@@ -54,12 +60,24 @@ interface Consultation {
     dateId?: string;
     timeId?: string;
   };
+  date?: string | { date?: string; _id?: string };
+  time?: string | { time?: string; _id?: string };
+  dateId?: string;
+  timeId?: string;
   status?: string;
   notes?: string;
   createdAt?: string;
 }
 
 interface Meta { total: number; page: number; limit: number; totalPages: number; }
+
+interface CalendarDay {
+  date: string;
+  dateId?: string;
+  totalSlots?: number;
+  availableSlots?: number;
+  isActive?: boolean;
+}
 
 type TabMode = 'slots' | 'settings' | 'consultations';
 type ViewMode = 'list' | 'create' | 'edit';
@@ -353,9 +371,14 @@ function DateSlotCard({
           <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block mb-1">Date Group</span>
           <h3 className="text-[15px] font-extrabold text-gray-900 leading-tight">{formattedDate}</h3>
         </div>
-        <span className={`px-2 py-0.5 text-[9px] font-bold rounded-md shrink-0 ${group.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-          {group.isActive ? 'Active' : 'Inactive'}
-        </span>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className={`px-2 py-0.5 text-[9px] font-bold rounded-md ${group.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+            {group.isActive ? 'Active' : 'Inactive'}
+          </span>
+          <span className="text-[10px] font-bold text-gray-400">
+            {group.slots.filter(s => s.isAvailable).length}/{group.slots.length} available
+          </span>
+        </div>
       </div>
 
       <div className="h-px bg-gray-50 my-1" />
@@ -445,6 +468,12 @@ export default function TimeSlots() {
   const [consultationsLoading, setConsultationsLoading] = useState(false);
   const [consultationPage, setConsultationPage] = useState(1);
   const [consultationMeta, setConsultationMeta] = useState<Meta>({ total: 0, page: 1, limit: 10, totalPages: 1 });
+  const [consultationSearch, setConsultationSearch] = useState('');
+  const [consultationStatusFilter, setConsultationStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled'>('all');
+
+  // Dedicated Bookable Groups for walk-in & reschedule modals
+  const [bookableGroups, setBookableGroups] = useState<DateGroup[]>([]);
+  const [bookableLoading, setBookableLoading] = useState(false);
 
   // Edit Consultation State
   const [showEditConsultationModal, setShowEditConsultationModal] = useState<Consultation | null>(null);
@@ -458,6 +487,15 @@ export default function TimeSlots() {
   const [editConsultationAvailableSlots, setEditConsultationAvailableSlots] = useState<TimeSlot[]>([]);
   const [isUpdatingConsultation, setIsUpdatingConsultation] = useState(false);
   const [isDeletingConsultationId, setIsDeletingConsultationId] = useState<string | null>(null);
+
+  // Show History, View Style & Calendar
+  const [showHistory, setShowHistory] = useState(false);
+  const [viewStyle, setViewStyle] = useState<'list' | 'calendar'>('list');
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth() + 1);
+  const [calendarData, setCalendarData] = useState<CalendarDay[]>([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [consultationsError, setConsultationsError] = useState('');
 
   // Walk-in booking modal state
   const [showBookModal, setShowBookModal] = useState(false);
@@ -477,12 +515,91 @@ export default function TimeSlots() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  // Helper extraction methods for flexible API payload formats
+  const getCandidateName = (c: Consultation) => {
+    return c.user?.fullName || c.fullName || c.name || c.candidateName || (typeof c.user === 'string' ? c.user : '') || '—';
+  };
+
+  const getCandidateEmail = (c: Consultation) => {
+    return c.user?.email || c.email || '—';
+  };
+
+  const getCandidateMobile = (c: Consultation) => {
+    return c.user?.mobile || c.mobile || c.phone || (c.countryCode && c.mobile ? `${c.countryCode} ${c.mobile}` : '') || '—';
+  };
+
+  const getCountryDisplay = (c: Consultation) => {
+    const country = c.country || (c.user as { country?: string })?.country;
+    const countryCode = c.countryCode || (c.user as { countryCode?: string })?.countryCode;
+
+    if (country && countryCode) {
+      return `${country} (${countryCode})`;
+    }
+    if (country) {
+      return country;
+    }
+    if (countryCode) {
+      return countryCode;
+    }
+    return '—';
+  };
+
+  const formatCleanDate = (rawDate: string) => {
+    if (!rawDate || rawDate === '—') return '—';
+    try {
+      const d = new Date(rawDate);
+      if (isNaN(d.getTime())) return rawDate;
+      return d.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+    } catch {
+      return rawDate;
+    }
+  };
+
+  const getAppointmentDate = (c: Consultation) => {
+    if (c.appointment?.date) return c.appointment.date;
+    if (typeof c.date === 'string') return c.date;
+    if (c.date && typeof c.date === 'object' && 'date' in c.date) return (c.date as { date?: string }).date || '—';
+    return '—';
+  };
+
+  const getAppointmentTime = (c: Consultation) => {
+    if (c.appointment?.time) return c.appointment.time;
+    if (typeof c.time === 'string') return c.time;
+    if (c.time && typeof c.time === 'object' && 'time' in c.time) return (c.time as { time?: string }).time || '';
+    return '';
+  };
+
+  // ── GET All Bookable Time Slots (for Modals) ───────────────────────────────
+  const fetchBookableGroups = useCallback(async () => {
+    setBookableLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/admin/time-slots?all=true&limit=100`, { headers: getHeaders() });
+      const data = await res.json();
+      if (data.success) {
+        const list: DateGroup[] = data.data?.timeSlots || data.data || [];
+        setBookableGroups(list);
+        return list;
+      }
+    } catch {
+      // fallback
+    } finally {
+      setBookableLoading(false);
+    }
+    return [];
+  }, []);
+
   // ── GET Time Slots ──────────────────────────────────────────────────────────
   const fetchAll = useCallback(async (p = page, silent = false) => {
     if (!silent) setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${BASE_URL}/admin/time-slots?page=${p}&limit=${LIMIT}`, { headers: getHeaders() });
+      const allParam = showHistory ? '&all=true' : '';
+      const res = await fetch(`${BASE_URL}/admin/time-slots?page=${p}&limit=${LIMIT}${allParam}`, { headers: getHeaders() });
       const data = await res.json();
       if (data.success) {
         const list: DateGroup[] = data.data?.timeSlots || data.data || [];
@@ -505,7 +622,7 @@ export default function TimeSlots() {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [page]);
+  }, [page, showHistory]);
 
   // ── GET Settings ─────────────────────────────────────────────────────────────
   const fetchSettings = useCallback(async () => {
@@ -526,6 +643,24 @@ export default function TimeSlots() {
       setSettingsLoading(false);
     }
   }, []);
+
+  // ── GET Calendar ─────────────────────────────────────────────────────────────
+  const fetchCalendar = useCallback(async (y = calendarYear, m = calendarMonth) => {
+    setCalendarLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/admin/time-slots/calendar?year=${y}&month=${m}`, { headers: getHeaders() });
+      const data = await res.json();
+      if (data.success) {
+        const days: CalendarDay[] = data.data?.days || data.data || [];
+        setCalendarData(days);
+      }
+    } catch {
+      // fallback
+    } finally {
+      setCalendarLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [calendarYear, calendarMonth]);
 
   // ── PUT Settings ─────────────────────────────────────────────────────────────
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -595,6 +730,7 @@ export default function TimeSlots() {
 
   const fetchConsultations = useCallback(async (p = consultationPage) => {
     setConsultationsLoading(true);
+    setConsultationsError('');
     try {
       const res = await fetch(`${BASE_URL}/admin/consultations?page=${p}&limit=10`, { headers: getHeaders() });
       const data = await res.json();
@@ -609,19 +745,26 @@ export default function TimeSlots() {
           limit: 10,
           totalPages
         });
+      } else {
+        setConsultationsError(data.message || 'Failed to fetch consultations');
       }
     } catch {
-      // fallback
+      setConsultationsError('Network error — could not reach the server');
     } finally {
       setConsultationsLoading(false);
     }
   }, [consultationPage]);
 
   useEffect(() => {
-    if (tab === 'slots') fetchAll(page);
-    else if (tab === 'settings') fetchSettings();
-    else if (tab === 'consultations') fetchConsultations(consultationPage);
-  }, [tab, page, consultationPage, fetchAll, fetchSettings, fetchConsultations]);
+    if (tab === 'slots') {
+      if (viewStyle === 'calendar') fetchCalendar(calendarYear, calendarMonth);
+      else fetchAll(page);
+    } else if (tab === 'settings') {
+      fetchSettings();
+    } else if (tab === 'consultations') {
+      fetchConsultations(consultationPage);
+    }
+  }, [tab, page, consultationPage, showHistory, viewStyle, calendarYear, calendarMonth, fetchAll, fetchSettings, fetchConsultations, fetchCalendar]);
 
   // ── POST Create ──────────────────────────────────────────────────────────────
   const handleCreate = async (fd: { date: string; slots: TimeSlot[]; isActive: boolean }) => {
@@ -722,7 +865,7 @@ export default function TimeSlots() {
 
       const res = await fetch(`${BASE_URL}/admin/consultations/book`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, // no Authorization header
+        headers: getHeaders(),
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -734,6 +877,7 @@ export default function TimeSlots() {
         const bookedName =
           data.data?.user?.fullName ||
           data.data?.consultation?.fullName ||
+          data.data?.fullName ||
           bookData.fullName.trim();
         showToast(`Consultation booked for ${bookedName}! 📅`);
         setShowBookModal(false);
@@ -828,17 +972,7 @@ export default function TimeSlots() {
       timeId: ''
     });
     setEditConsultationAvailableSlots([]);
-    if (groups.length === 0) {
-      fetch(`${BASE_URL}/admin/time-slots?limit=100`, { headers: getHeaders() })
-        .then(r => r.json())
-        .then(d => {
-          if (d.success) {
-            const list: DateGroup[] = d.data?.timeSlots || d.data || [];
-            setGroups(list);
-          }
-        })
-        .catch(() => {});
-    }
+    fetchBookableGroups();
   };
 
   const handleEditConsultationSubmit = async (e: React.FormEvent) => {
@@ -900,7 +1034,7 @@ export default function TimeSlots() {
   };
 
   const onDeleteConsultation = async (c: Consultation) => {
-    const candidateName = c.user?.fullName || 'this candidate';
+    const candidateName = getCandidateName(c);
     if (!confirm(`Are you sure you want to delete the consultation for ${candidateName}?`)) return;
 
     setIsDeletingConsultationId(c._id);
@@ -989,23 +1123,58 @@ export default function TimeSlots() {
       {tab === 'slots' && (
         <>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-            <p className="text-sm font-bold text-gray-700">
-              {meta.total} Date Groups Configured
-            </p>
+            <div className="flex items-center gap-4 flex-wrap">
+              <p className="text-sm font-bold text-gray-700">
+                {meta.total} Date Groups Configured
+              </p>
+              <button
+                onClick={() => { setShowHistory(h => !h); setPage(1); }}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                  showHistory
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-700'
+                }`}
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+                {showHistory ? 'Showing All (incl. past)' : 'Current & Future Only'}
+              </button>
+            </div>
             <div className="flex items-center gap-3">
-              <button 
-                onClick={() => { setIsRefreshing(true); fetchAll(page); }} 
+              <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-100">
+                <button
+                  onClick={() => setViewStyle('list')}
+                  title="List View"
+                  className={`p-2 rounded-lg transition-all cursor-pointer ${
+                    viewStyle === 'list' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400 hover:text-gray-700'
+                  }`}
+                >
+                  <ListIcon className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => { setViewStyle('calendar'); fetchCalendar(calendarYear, calendarMonth); }}
+                  title="Calendar View"
+                  className={`p-2 rounded-lg transition-all cursor-pointer ${
+                    viewStyle === 'calendar' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400 hover:text-gray-700'
+                  }`}
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+              </div>
+              <button
+                onClick={() => { setIsRefreshing(true); if (viewStyle === 'calendar') fetchCalendar(calendarYear, calendarMonth); else fetchAll(page); }}
                 disabled={isRefreshing}
                 className="p-3 bg-white border border-gray-100 text-gray-500 hover:text-black rounded-2xl shadow-sm transition-all cursor-pointer"
               >
                 <RefreshCw className={`w-[18px] h-[18px] ${isRefreshing ? 'animate-spin' : ''}`} />
               </button>
-              <button 
-                onClick={() => { setSelectedGroup(null); setView('create'); }}
-                className="flex items-center gap-2 px-6 py-3 bg-black text-white text-[13px] font-bold rounded-2xl shadow-md hover:bg-gray-800 transition-all cursor-pointer"
-              >
-                <Plus className="w-4 h-4" /> Add Date slots
-              </button>
+              {viewStyle === 'list' && (
+                <button
+                  onClick={() => { setSelectedGroup(null); setView('create'); }}
+                  className="flex items-center gap-2 px-6 py-3 bg-black text-white text-[13px] font-bold rounded-2xl shadow-md hover:bg-gray-800 transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" /> Add Date slots
+                </button>
+              )}
             </div>
           </div>
 
@@ -1017,6 +1186,7 @@ export default function TimeSlots() {
             </div>
           )}
 
+          {viewStyle === 'list' && (
           <div className="bg-white rounded-3xl p-3 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 flex flex-col md:flex-row md:items-center gap-3 mb-8">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1040,8 +1210,118 @@ export default function TimeSlots() {
               ))}
             </div>
           </div>
+          )}
 
-          {loading ? (
+          {viewStyle === 'calendar' ? (
+            /* ── Calendar Grid View ── */
+            <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-6">
+              <div className="flex items-center justify-between mb-6">
+                <button
+                  onClick={() => {
+                    const d = new Date(calendarYear, calendarMonth - 2);
+                    setCalendarYear(d.getFullYear());
+                    setCalendarMonth(d.getMonth() + 1);
+                  }}
+                  className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-all cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4 text-gray-600" />
+                </button>
+                <h3 className="text-[15px] font-extrabold text-gray-900">
+                  {new Date(calendarYear, calendarMonth - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </h3>
+                <button
+                  onClick={() => {
+                    const d = new Date(calendarYear, calendarMonth);
+                    setCalendarYear(d.getFullYear());
+                    setCalendarMonth(d.getMonth() + 1);
+                  }}
+                  className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-all cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4 text-gray-600" />
+                </button>
+              </div>
+
+              {calendarLoading ? (
+                <div className="py-12 text-center">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-300" />
+                  <p className="text-xs font-medium text-gray-400 mt-2">Loading calendar…</p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-7 mb-1">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                      <div key={day} className="text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider py-2">
+                        {day}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {(() => {
+                      const firstDayOfWeek = new Date(calendarYear, calendarMonth - 1, 1).getDay();
+                      const daysInMonth = new Date(calendarYear, calendarMonth, 0).getDate();
+                      const today = new Date().toISOString().split('T')[0];
+                      const cells = [];
+                      for (let i = 0; i < firstDayOfWeek; i++) {
+                        cells.push(<div key={`blank-${i}`} />);
+                      }
+                      for (let d = 1; d <= daysInMonth; d++) {
+                        const dateStr = `${calendarYear}-${String(calendarMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                        const dayData = calendarData.find(cd => (cd.date || '').startsWith(dateStr));
+                        const isToday = dateStr === today;
+                        cells.push(
+                          <div
+                            key={d}
+                            onClick={() => {
+                              if (dayData) {
+                                setSearch(new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+                                setViewStyle('list');
+                              }
+                            }}
+                            title={dayData ? `Click to view slots for ${dateStr}` : undefined}
+                            className={`relative p-2 rounded-xl text-center min-h-[58px] flex flex-col items-center justify-start gap-1 transition-all ${
+                              dayData
+                                ? dayData.isActive !== false
+                                  ? 'bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 hover:scale-105 cursor-pointer shadow-sm'
+                                  : 'bg-gray-50 border border-gray-100 opacity-60 hover:opacity-100 cursor-pointer'
+                                : isToday
+                                ? 'bg-blue-50 border border-blue-100'
+                                : 'border border-transparent'
+                            }`}
+                          >
+                            <span className={`text-[12px] font-bold ${
+                              isToday ? 'text-blue-600' : dayData ? 'text-emerald-700' : 'text-gray-400'
+                            }`}>
+                              {d}
+                            </span>
+                            {dayData && (
+                              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full leading-tight">
+                                {dayData.availableSlots ?? dayData.totalSlots ?? '?'} slots
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }
+                      return cells;
+                    })()}
+                  </div>
+                  <div className="flex items-center gap-5 mt-5 pt-4 border-t border-gray-50">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded-full bg-emerald-100 border border-emerald-200" />
+                      <span className="text-[11px] font-medium text-gray-500">Has active slots</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded-full bg-blue-100 border border-blue-200" />
+                      <span className="text-[11px] font-medium text-gray-500">Today</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded-full bg-gray-100 border border-gray-200" />
+                      <span className="text-[11px] font-medium text-gray-500">Inactive</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
             </div>
@@ -1073,7 +1353,7 @@ export default function TimeSlots() {
             </div>
           )}
 
-          {!loading && meta.totalPages > 1 && (
+          {!loading && viewStyle === 'list' && meta.totalPages > 1 && (
             <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-100">
               <p className="text-[13px] font-medium text-gray-500">
                 Page <span className="font-bold text-gray-900">{meta.page}</span> of <span className="font-bold text-gray-900">{meta.totalPages}</span>
@@ -1197,25 +1477,63 @@ export default function TimeSlots() {
             <p className="text-sm font-bold text-gray-700">
               {consultationMeta.total} Total Consultations Booked
             </p>
-            <button
-              onClick={() => {
-                fetch(`${BASE_URL}/admin/time-slots?limit=100`, { headers: getHeaders() })
-                  .then(r => r.json())
-                  .then(d => {
-                    if (d.success) {
-                      const list: DateGroup[] = d.data?.timeSlots || d.data || [];
-                      setGroups(list);
-                    }
-                  })
-                  .catch(() => {});
-                setShowBookModal(true);
-              }}
-              className="flex items-center gap-2 px-5 py-3 bg-black text-white text-xs font-bold rounded-2xl shadow-md hover:bg-gray-800 transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" /> Book Walk-in / Phone Consultation
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => fetchConsultations(consultationPage)}
+                disabled={consultationsLoading}
+                className="p-3 bg-white border border-gray-100 text-gray-500 hover:text-black rounded-2xl shadow-sm transition-all cursor-pointer"
+                title="Refresh Consultations"
+              >
+                <RefreshCw className={`w-[18px] h-[18px] ${consultationsLoading ? 'animate-spin' : ''}`} />
+              </button>
+              <button
+                onClick={() => {
+                  fetchBookableGroups();
+                  setShowBookModal(true);
+                }}
+                className="flex items-center gap-2 px-5 py-3 bg-black text-white text-xs font-bold rounded-2xl shadow-md hover:bg-gray-800 transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" /> Book Walk-in / Phone Consultation
+              </button>
+            </div>
           </div>
 
+          {/* Consultations Search & Filter Bar */}
+          <div className="bg-white rounded-3xl p-3 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 flex flex-col md:flex-row md:items-center gap-3 mb-8">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search by candidate name, email, phone, or appointment date..."
+                value={consultationSearch}
+                onChange={e => setConsultationSearch(e.target.value)}
+                className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-transparent focus:border-gray-200 focus:bg-white rounded-2xl text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-gray-100 transition-all"
+              />
+            </div>
+            <div className="flex bg-gray-50 p-1 rounded-2xl border border-gray-100 shrink-0 flex-wrap">
+              {(['all', 'pending', 'confirmed', 'completed', 'cancelled'] as const).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setConsultationStatusFilter(s)}
+                  className={`px-3 py-2 rounded-xl text-[12px] font-bold capitalize transition-all cursor-pointer ${
+                    consultationStatusFilter === s
+                      ? 'bg-white shadow-sm text-gray-900 border border-gray-100'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  {s === 'all' ? 'All' : s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {consultationsError && (
+            <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 px-5 py-4 rounded-2xl text-[13px] font-bold mb-6">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              {consultationsError}
+              <button onClick={() => fetchConsultations(consultationPage)} className="ml-auto underline hover:no-underline text-xs cursor-pointer">Retry</button>
+            </div>
+          )}
           {consultationsLoading ? (
             <div className="py-16 text-center text-gray-400">
               <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-gray-300" />
@@ -1226,86 +1544,134 @@ export default function TimeSlots() {
               <User className="w-10 h-10 mx-auto mb-3 text-gray-200" />
               <p className="text-sm font-bold text-gray-800">No consultations booked yet</p>
             </div>
-          ) : (
-            <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50/50">
-                      <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Candidate / User</th>
-                      <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Contact Details</th>
-                      <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Country</th>
-                      <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Appointment Date & Time</th>
-                      <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {consultations.map(c => (
-                      <tr key={c._id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-4">
-                          <p className="text-sm font-bold text-gray-900">{c.user?.fullName || '—'}</p>
-                        </td>
-                        <td className="px-4 py-4 text-xs text-gray-600">
-                          <p className="font-medium text-gray-900">{c.user?.email || '—'}</p>
-                          <p className="text-gray-400 mt-0.5">{c.user?.mobile || '—'}</p>
-                        </td>
-                        <td className="px-4 py-4 text-xs font-semibold text-gray-700">
-                          {c.country || '—'}
-                        </td>
-                        <td className="px-4 py-4 text-xs font-bold text-gray-900">
-                          {c.appointment?.date || '—'} {c.appointment?.time ? `@ ${c.appointment.time}` : ''}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex px-2.5 py-1 rounded-lg text-[11px] font-bold capitalize ${
-                            c.status?.toLowerCase() === 'completed'
-                              ? 'bg-blue-50 text-blue-700'
-                              : c.status?.toLowerCase() === 'cancelled'
-                              ? 'bg-red-50 text-red-700'
-                              : c.status?.toLowerCase() === 'confirmed'
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : 'bg-amber-50 text-amber-700'
-                          }`}>
-                            {c.status || 'Pending'}
-                          </span>
-                          {c.notes && (
-                            <p className="text-[11px] text-gray-400 mt-1 max-w-xs truncate" title={c.notes}>
-                              <span className="font-medium text-gray-600">Notes:</span> {c.notes}
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => openEditConsultation(c)}
-                              title="Edit Consultation"
-                              className="p-2 rounded-xl bg-white border border-gray-200 text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-all shadow-sm cursor-pointer"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onDeleteConsultation(c)}
-                              disabled={isDeletingConsultationId === c._id}
-                              title="Delete Consultation"
-                              className="p-2 rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
-                            >
-                              {isDeletingConsultationId === c._id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Trash className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        </td>
+          ) : (() => {
+            const displayConsultations = consultations.filter(c => {
+              const name = getCandidateName(c).toLowerCase();
+              const email = getCandidateEmail(c).toLowerCase();
+              const mobile = getCandidateMobile(c).toLowerCase();
+              const date = getAppointmentDate(c).toLowerCase();
+              const status = (c.status || 'pending').toLowerCase();
+
+              const matchesSearch = !consultationSearch ||
+                name.includes(consultationSearch.toLowerCase()) ||
+                email.includes(consultationSearch.toLowerCase()) ||
+                mobile.includes(consultationSearch.toLowerCase()) ||
+                date.includes(consultationSearch.toLowerCase());
+
+              const matchesStatus = consultationStatusFilter === 'all' || status === consultationStatusFilter;
+
+              return matchesSearch && matchesStatus;
+            });
+
+            if (displayConsultations.length === 0) {
+              return (
+                <div className="py-16 text-center text-gray-400 bg-white rounded-3xl border border-gray-100">
+                  <User className="w-10 h-10 mx-auto mb-3 text-gray-200" />
+                  <p className="text-sm font-bold text-gray-800">No consultations match your filter</p>
+                  <p className="text-xs text-gray-500 mt-1">Try searching with a different term or status.</p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50/50">
+                        <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Candidate / User</th>
+                        <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Contact Details</th>
+                        <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Country</th>
+                        <th className="px-4 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Appointment Date & Time</th>
+                        <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider text-right">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {displayConsultations.map(c => (
+                        <tr key={c._id} className="hover:bg-gray-50/50 transition-colors">
+                          <td className="px-6 py-4">
+                            <p className="text-sm font-bold text-gray-900">{getCandidateName(c)}</p>
+                            {c.createdAt && (
+                              <span className="text-[10.5px] font-medium text-gray-400 block mt-0.5">
+                                Booked {new Date(c.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-4 text-xs text-gray-600">
+                            <p className="font-medium text-gray-900">{getCandidateEmail(c)}</p>
+                            <p className="text-gray-400 mt-0.5">{getCandidateMobile(c)}</p>
+                          </td>
+                          <td className="px-4 py-4 text-xs font-semibold text-gray-700">
+                            {getCountryDisplay(c)}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex items-center gap-1.5 text-xs font-bold text-gray-900">
+                                <CalendarDays className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                <span>{formatCleanDate(getAppointmentDate(c))}</span>
+                              </div>
+                              {getAppointmentTime(c) ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="inline-flex items-center gap-1 bg-blue-50 border border-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-semibold text-[11px]">
+                                    <Clock className="w-3 h-3 text-blue-500 shrink-0" />
+                                    {getAppointmentTime(c)}
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex px-2.5 py-1 rounded-lg text-[11px] font-bold capitalize ${
+                              c.status?.toLowerCase() === 'completed'
+                                ? 'bg-blue-50 text-blue-700'
+                                : c.status?.toLowerCase() === 'cancelled'
+                                ? 'bg-red-50 text-red-700'
+                                : c.status?.toLowerCase() === 'confirmed'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : 'bg-amber-50 text-amber-700'
+                            }`}>
+                              {c.status || 'Pending'}
+                            </span>
+                            {c.notes && (
+                              <p className="text-[11px] text-gray-400 mt-1 max-w-xs truncate" title={c.notes}>
+                                <span className="font-medium text-gray-600">Notes:</span> {c.notes}
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openEditConsultation(c)}
+                                title="Edit Consultation"
+                                className="p-2 rounded-xl bg-white border border-gray-200 text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-all shadow-sm cursor-pointer"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onDeleteConsultation(c)}
+                                disabled={isDeletingConsultationId === c._id}
+                                title="Delete Consultation"
+                                className="p-2 rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+                              >
+                                {isDeletingConsultationId === c._id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {consultationMeta.totalPages > 1 && (
             <div className="flex items-center justify-between mt-6">
@@ -1412,13 +1778,16 @@ export default function TimeSlots() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Select Appointment Date</label>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Select Appointment Date {bookableLoading && <span className="text-[10px] lowercase text-gray-400 font-normal">(loading live dates...)</span>}
+                </label>
                 <select
                   required
                   value={bookData.dateId}
                   onChange={e => {
                     const dateId = e.target.value;
-                    const group = groups.find(g => g._id === dateId);
+                    const availableList = bookableGroups.length > 0 ? bookableGroups : groups;
+                    const group = availableList.find(g => g._id === dateId);
                     const avail = group ? group.slots.filter(s => s.isAvailable) : [];
                     setAvailableSlotsForDate(avail);
                     setBookData(p => ({ ...p, dateId, timeId: '' }));
@@ -1426,7 +1795,7 @@ export default function TimeSlots() {
                   className="w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-black"
                 >
                   <option value="">Choose Date...</option>
-                  {groups.map(g => (
+                  {(bookableGroups.length > 0 ? bookableGroups : groups).map(g => (
                     <option key={g._id} value={g._id}>
                       {new Date(g.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                     </option>
@@ -1514,7 +1883,7 @@ export default function TimeSlots() {
               <div>
                 <h2 className="text-[17px] font-extrabold text-gray-900">Edit Consultation</h2>
                 <p className="text-[12.5px] font-semibold text-gray-400 mt-0.5">
-                  {showEditConsultationModal.user?.fullName || 'Candidate'}
+                  {getCandidateName(showEditConsultationModal)}
                 </p>
               </div>
             </div>
@@ -1524,17 +1893,32 @@ export default function TimeSlots() {
               <div className="grid grid-cols-2 gap-2 text-gray-600">
                 <div>
                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Email</span>
-                  <span className="font-semibold text-gray-900 truncate block">{showEditConsultationModal.user?.email || '—'}</span>
+                  <span className="font-semibold text-gray-900 truncate block">{getCandidateEmail(showEditConsultationModal)}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Mobile</span>
-                  <span className="font-semibold text-gray-900 truncate block">{showEditConsultationModal.user?.mobile || '—'}</span>
+                  <span className="font-semibold text-gray-900 truncate block">{getCandidateMobile(showEditConsultationModal)}</span>
                 </div>
-                <div className="col-span-2 pt-1 border-t border-gray-200/50">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Current Appointment</span>
-                  <span className="font-semibold text-gray-900">
-                    {showEditConsultationModal.appointment?.date || '—'} {showEditConsultationModal.appointment?.time ? `@ ${showEditConsultationModal.appointment.time}` : ''}
+                <div className="col-span-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Country</span>
+                  <span className="font-semibold text-gray-900 truncate block">
+                    {getCountryDisplay(showEditConsultationModal)}
                   </span>
+                </div>
+                <div className="col-span-2 pt-2 border-t border-gray-200/50">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Current Appointment</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-900 shadow-sm">
+                      <CalendarDays className="w-3.5 h-3.5 text-blue-600" />
+                      {formatCleanDate(getAppointmentDate(showEditConsultationModal))}
+                    </span>
+                    {getAppointmentTime(showEditConsultationModal) ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-100 rounded-lg text-xs font-bold text-blue-700 shadow-sm">
+                        <Clock className="w-3 h-3 text-blue-500" />
+                        {getAppointmentTime(showEditConsultationModal)}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1600,14 +1984,15 @@ export default function TimeSlots() {
                   <div className="mt-3 space-y-3 pl-6 border-l-2 border-gray-200">
                     <div>
                       <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                        Select New Date <span className="text-red-500">*</span>
+                        Select New Date <span className="text-red-500">*</span> {bookableLoading && <span className="lowercase font-normal">(loading...)</span>}
                       </label>
                       <select
                         required={editConsultationForm.enableReschedule}
                         value={editConsultationForm.dateId}
                         onChange={e => {
                           const dateId = e.target.value;
-                          const group = groups.find(g => g._id === dateId);
+                          const availableList = bookableGroups.length > 0 ? bookableGroups : groups;
+                          const group = availableList.find(g => g._id === dateId);
                           const avail = group ? group.slots.filter(s => s.isAvailable) : [];
                           setEditConsultationAvailableSlots(avail);
                           setEditConsultationForm(p => ({ ...p, dateId, timeId: '' }));
@@ -1615,7 +2000,7 @@ export default function TimeSlots() {
                         className="w-full bg-gray-50/50 px-3 py-2 rounded-xl border border-gray-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black"
                       >
                         <option value="">Choose Date...</option>
-                        {groups.map(g => (
+                        {(bookableGroups.length > 0 ? bookableGroups : groups).map(g => (
                           <option key={g._id} value={g._id}>
                             {new Date(g.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                           </option>
