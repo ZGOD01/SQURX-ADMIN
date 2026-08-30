@@ -92,6 +92,100 @@ const WEEKDAYS = [
   { id: 6, label: 'Saturday' },
 ];
 
+/**
+ * Safely parse date and slot time into a local Date object.
+ * Handles ISO strings ("2026-08-30T00:00:00.000Z"), plain dates ("2026-08-30"),
+ * and various time formats ("09:00 AM", "9:00 AM", "02:30 PM", "14:00", "09:00").
+ */
+export function parseSlotDateTime(dateStr: string, timeStr?: string): Date | null {
+  if (!dateStr) return null;
+  try {
+    let year: number;
+    let month: number; // 0-indexed
+    let day: number;
+
+    if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+      const parts = dateStr.slice(0, 10).split('-');
+      year = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10) - 1;
+      day = parseInt(parts[2], 10);
+    } else {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return null;
+      year = d.getFullYear();
+      month = d.getMonth();
+      day = d.getDate();
+    }
+
+    if (!timeStr || !timeStr.trim()) {
+      // Return end of that day when only date is evaluated
+      return new Date(year, month, day, 23, 59, 59, 999);
+    }
+
+    const cleanedTime = timeStr.trim();
+    const match12 = cleanedTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    const match24 = cleanedTime.match(/^(\d{1,2}):(\d{2})$/);
+
+    let hours = 0;
+    let minutes = 0;
+
+    if (match12) {
+      hours = parseInt(match12[1], 10);
+      minutes = parseInt(match12[2], 10);
+      const meridiem = match12[3].toUpperCase();
+      if (meridiem === 'PM' && hours < 12) {
+        hours += 12;
+      } else if (meridiem === 'AM' && hours === 12) {
+        hours = 0;
+      }
+    } else if (match24) {
+      hours = parseInt(match24[1], 10);
+      minutes = parseInt(match24[2], 10);
+    } else {
+      const fallback = new Date(`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')} ${cleanedTime}`);
+      if (!isNaN(fallback.getTime())) return fallback;
+      return new Date(year, month, day, 23, 59, 59, 999);
+    }
+
+    return new Date(year, month, day, hours, minutes, 0, 0);
+  } catch {
+    return null;
+  }
+}
+
+export function isSlotInFuture(dateStr: string, timeStr?: string): boolean {
+  const dt = parseSlotDateTime(dateStr, timeStr);
+  if (!dt) return false;
+  return dt.getTime() > Date.now();
+}
+
+/**
+ * Filter groups to only future active dates that have at least one upcoming available slot.
+ * Slots inside each group are also filtered to only future available ones and sorted chronologically.
+ */
+export function getFutureBookableGroups(allGroups: DateGroup[]): DateGroup[] {
+  return allGroups
+    .filter(g => g.isActive !== false)
+    .map(g => {
+      const futureSlots = (g.slots || []).filter(s => s.isAvailable && isSlotInFuture(g.date, s.time));
+      futureSlots.sort((a, b) => {
+        const timeA = parseSlotDateTime(g.date, a.time)?.getTime() || 0;
+        const timeB = parseSlotDateTime(g.date, b.time)?.getTime() || 0;
+        return timeA - timeB;
+      });
+      return {
+        ...g,
+        slots: futureSlots
+      };
+    })
+    .filter(g => g.slots.length > 0)
+    .sort((a, b) => {
+      const timeA = parseSlotDateTime(a.date)?.getTime() || 0;
+      const timeB = parseSlotDateTime(b.date)?.getTime() || 0;
+      return timeA - timeB;
+    });
+}
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
 function Toast({ msg, type }: { msg: string; type: 'success' | 'error' }) {
   return (
@@ -1065,6 +1159,13 @@ export default function TimeSlots() {
     
     const mQ = !search || formattedDate.includes(search.toLowerCase());
     const mS = statusFilter === 'all' || (statusFilter === 'active' && g.isActive) || (statusFilter === 'inactive' && !g.isActive);
+    
+    if (!showHistory) {
+      const dt = parseSlotDateTime(g.date);
+      const isPast = dt ? dt.getTime() < new Date().setHours(0, 0, 0, 0) : false;
+      if (isPast) return false;
+    }
+    
     return mQ && mS;
   });
 
@@ -1781,26 +1882,37 @@ export default function TimeSlots() {
                 <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
                   Select Appointment Date {bookableLoading && <span className="text-[10px] lowercase text-gray-400 font-normal">(loading live dates...)</span>}
                 </label>
-                <select
-                  required
-                  value={bookData.dateId}
-                  onChange={e => {
-                    const dateId = e.target.value;
-                    const availableList = bookableGroups.length > 0 ? bookableGroups : groups;
-                    const group = availableList.find(g => g._id === dateId);
-                    const avail = group ? group.slots.filter(s => s.isAvailable) : [];
-                    setAvailableSlotsForDate(avail);
-                    setBookData(p => ({ ...p, dateId, timeId: '' }));
-                  }}
-                  className="w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-black"
-                >
-                  <option value="">Choose Date...</option>
-                  {(bookableGroups.length > 0 ? bookableGroups : groups).map(g => (
-                    <option key={g._id} value={g._id}>
-                      {new Date(g.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                    </option>
-                  ))}
-                </select>
+                {(() => {
+                  const futureGroups = getFutureBookableGroups(bookableGroups.length > 0 ? bookableGroups : groups);
+                  return (
+                    <>
+                      <select
+                        required
+                        value={bookData.dateId}
+                        onChange={e => {
+                          const dateId = e.target.value;
+                          const group = futureGroups.find(g => g._id === dateId);
+                          const avail = group ? group.slots : [];
+                          setAvailableSlotsForDate(avail);
+                          setBookData(p => ({ ...p, dateId, timeId: '' }));
+                        }}
+                        className="w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-black"
+                      >
+                        <option value="">Choose Date...</option>
+                        {futureGroups.map(g => (
+                          <option key={g._id} value={g._id}>
+                            {new Date(g.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} ({g.slots.length} {g.slots.length === 1 ? 'slot' : 'slots'} available)
+                          </option>
+                        ))}
+                      </select>
+                      {futureGroups.length === 0 && !bookableLoading && (
+                        <p className="text-xs text-amber-600 bg-amber-50 p-2.5 rounded-lg font-medium mt-2">
+                          No upcoming dates with available time slots found.
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {bookData.dateId && (
@@ -1986,26 +2098,37 @@ export default function TimeSlots() {
                       <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
                         Select New Date <span className="text-red-500">*</span> {bookableLoading && <span className="lowercase font-normal">(loading...)</span>}
                       </label>
-                      <select
-                        required={editConsultationForm.enableReschedule}
-                        value={editConsultationForm.dateId}
-                        onChange={e => {
-                          const dateId = e.target.value;
-                          const availableList = bookableGroups.length > 0 ? bookableGroups : groups;
-                          const group = availableList.find(g => g._id === dateId);
-                          const avail = group ? group.slots.filter(s => s.isAvailable) : [];
-                          setEditConsultationAvailableSlots(avail);
-                          setEditConsultationForm(p => ({ ...p, dateId, timeId: '' }));
-                        }}
-                        className="w-full bg-gray-50/50 px-3 py-2 rounded-xl border border-gray-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black"
-                      >
-                        <option value="">Choose Date...</option>
-                        {(bookableGroups.length > 0 ? bookableGroups : groups).map(g => (
-                          <option key={g._id} value={g._id}>
-                            {new Date(g.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                          </option>
-                        ))}
-                      </select>
+                      {(() => {
+                        const futureGroups = getFutureBookableGroups(bookableGroups.length > 0 ? bookableGroups : groups);
+                        return (
+                          <>
+                            <select
+                              required={editConsultationForm.enableReschedule}
+                              value={editConsultationForm.dateId}
+                              onChange={e => {
+                                const dateId = e.target.value;
+                                const group = futureGroups.find(g => g._id === dateId);
+                                const avail = group ? group.slots : [];
+                                setEditConsultationAvailableSlots(avail);
+                                setEditConsultationForm(p => ({ ...p, dateId, timeId: '' }));
+                              }}
+                              className="w-full bg-gray-50/50 px-3 py-2 rounded-xl border border-gray-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black"
+                            >
+                              <option value="">Choose Date...</option>
+                              {futureGroups.map(g => (
+                                <option key={g._id} value={g._id}>
+                                  {new Date(g.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} ({g.slots.length} {g.slots.length === 1 ? 'slot' : 'slots'} available)
+                                </option>
+                              ))}
+                            </select>
+                            {futureGroups.length === 0 && !bookableLoading && (
+                              <p className="text-xs text-amber-600 bg-amber-50 p-2.5 rounded-lg font-medium mt-2">
+                                No upcoming dates with available time slots found.
+                              </p>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
 
                     {editConsultationForm.dateId && (
