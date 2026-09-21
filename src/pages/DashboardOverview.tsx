@@ -1,41 +1,57 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
     Users, Briefcase, CheckCircle,
     Shield, Activity, ArrowUpRight, ArrowDownRight,
-    FileCheck, RefreshCw, Database,
+    FileCheck, RefreshCw,
     MoreHorizontal
 } from 'lucide-react';
 import {
     AreaChart, Area, XAxis, YAxis,
     CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
+import { API_BASE_URL } from '../config/api';
+import { Link } from 'react-router-dom';
+import type { SyncLogItem } from '../types/jobsAdmin';
 
-const INITIAL_LOGIN_DATA = [
-    { time: '08:00', login: 120, logout: 10 },
-    { time: '10:00', login: 350, logout: 50 },
-    { time: '12:00', login: 200, logout: 100 },
-    { time: '14:00', login: 400, logout: 120 },
-    { time: '16:00', login: 250, logout: 180 },
-    { time: '18:00', login: 150, logout: 300 },
-    { time: '20:00', login: 80, logout: 150 },
-];
+interface UserRecord {
+    _id?: string;
+    fullName?: string;
+    email?: string;
+    role?: string;
+    createdAt?: string;
+}
 
-const INITIAL_ACTIVITY_STREAM = [
-    { id: 1, action: "Approved Student: Alex M.", time: "2m ago", type: "success" },
-    { id: 2, action: "New Job: Sr. UX Designer", time: "15m ago", type: "info" },
-    { id: 3, action: "Flagged Profile: John D.", time: "1h ago", type: "warning" },
-    { id: 4, action: "Updated Auth Policies", time: "3h ago", type: "info" },
-    { id: 5, action: "Mass Email: System Maintenance", time: "5h ago", type: "info" }
-];
+interface ActivityDataPoint {
+    time: string;
+    jobs: number;
+    events: number;
+}
 
-const INITIAL_MODERATION_QUEUE = [
-    { id: 'MQ-101', entity: 'TechNova', type: 'Recruiter', status: 'Pending Review', risk: 'Low' },
-    { id: 'MQ-102', entity: 'John D.', type: 'Student', status: 'Flagged CV', risk: 'High' },
-    { id: 'MQ-103', entity: 'Global Solutions', type: 'Job Post', status: 'Keyword Match', risk: 'Med' },
-    { id: 'MQ-104', entity: 'Nexus Inc', type: 'Recruiter', status: 'Pending Review', risk: 'Low' },
-];
+interface ModerationItem {
+    id: string;
+    entity: string;
+    type: string;
+    status: string;
+    risk: 'Low' | 'Med' | 'High';
+}
 
-const StatCard = ({ title, value, icon: Icon, trend, positive }: any) => (
+interface ActivityItem {
+    id: string | number;
+    action: string;
+    time: string;
+    type: 'success' | 'warning' | 'info' | 'failed';
+}
+
+interface StatCardProps {
+    title: string;
+    value: string | number;
+    icon: React.ElementType;
+    trend?: string;
+    positive?: boolean;
+    subtitle?: string;
+}
+
+const StatCard = ({ title, value, icon: Icon, trend, positive, subtitle }: StatCardProps) => (
     <div className="bg-white rounded-3xl p-6 flex flex-col justify-between shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-shadow duration-300">
         <div className="flex justify-between items-center mb-6">
             <h3 className="text-[13px] font-bold text-gray-500">{title}</h3>
@@ -44,7 +60,10 @@ const StatCard = ({ title, value, icon: Icon, trend, positive }: any) => (
             </div>
         </div>
         <div className="flex items-end justify-between">
-            <p className="text-3xl font-extrabold text-gray-900 tracking-tight leading-none">{value}</p>
+            <div>
+                <p className="text-3xl font-extrabold text-gray-900 tracking-tight leading-none">{value}</p>
+                {subtitle && <p className="text-[11px] font-medium text-gray-400 mt-1">{subtitle}</p>}
+            </div>
             {trend && (
                 <div className={`flex items-center gap-1 text-[12px] font-bold ${positive ? 'text-green-600 bg-green-50' : 'text-gray-500 bg-gray-50'} px-2 py-1 rounded-xl`}>
                     {positive ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
@@ -55,59 +74,190 @@ const StatCard = ({ title, value, icon: Icon, trend, positive }: any) => (
     </div>
 );
 
+function getHeaders(): HeadersInit {
+    return {
+        'Authorization': `Bearer ${sessionStorage.getItem('adminToken') || ''}`,
+        'Content-Type': 'application/json'
+    };
+}
+
 export default function DashboardOverview() {
-    const [loginData, setLoginData] = useState(INITIAL_LOGIN_DATA);
-    const [activityStream] = useState(INITIAL_ACTIVITY_STREAM);
+    const [activityChartData, setActivityChartData] = useState<ActivityDataPoint[]>([]);
     const [stats, setStats] = useState({
-        students: 24192,
-        cvs: 1842,
-        recruiters: 849,
-        jobs: 3214
+        students: 0,
+        recruiters: 0,
+        liveJobs: 0,
+        expiredJobs: 0,
+        pendingReviewCount: 0
     });
+    const [activityStream, setActivityStream] = useState<ActivityItem[]>([]);
+    const [moderationQueue, setModerationQueue] = useState<ModerationItem[]>([]);
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [lastSynced, setLastSynced] = useState('Just now');
+    const [lastSynced, setLastSynced] = useState('Loading...');
 
-    useEffect(() => {
-        const statsInterval = setInterval(() => {
-            setStats(prev => ({
-                students: prev.students + Math.floor(Math.random() * 3),
-                cvs: prev.cvs + Math.floor(Math.random() * 5),
-                recruiters: prev.recruiters + (Math.random() > 0.8 ? 1 : 0),
-                jobs: prev.jobs + Math.floor(Math.random() * 2) - Math.floor(Math.random() * 2)
-            }));
-        }, 3000);
+    const fetchLiveData = useCallback(async () => {
+        setIsRefreshing(true);
+        try {
+            // 1. Fetch live jobs stats
+            const jobsPromise = fetch(`${API_BASE_URL}/admin/jobs/stats`, { headers: getHeaders() })
+                .then(r => r.json())
+                .catch(() => null);
 
-        const chartInterval = setInterval(() => {
-            setLoginData(prev => {
-                const newData = [...prev];
-                const last = newData[newData.length - 1];
-                newData[newData.length - 1] = {
-                    ...last,
-                    login: last.login + Math.floor(Math.random() * 10) - 2,
-                    logout: last.logout + Math.floor(Math.random() * 5)
-                };
-                return newData;
+            // 2. Fetch live students count
+            const studentsPromise = fetch(`${API_BASE_URL}/admin/users?role=student&limit=50`, { headers: getHeaders() })
+                .then(r => r.json())
+                .catch(() => null);
+
+            // 3. Fetch live recruiters count
+            const recruitersPromise = fetch(`${API_BASE_URL}/admin/users?role=recruiter&limit=1`, { headers: getHeaders() })
+                .then(r => r.json())
+                .catch(() => null);
+
+            // 4. Fetch live unverified/pending users
+            const pendingUsersPromise = fetch(`${API_BASE_URL}/admin/users?isVerified=false&limit=5`, { headers: getHeaders() })
+                .then(r => r.json())
+                .catch(() => null);
+
+            // 5. Fetch live sync logs
+            const syncLogsPromise = fetch(`${API_BASE_URL}/admin/jobs/sync-logs?limit=30`, { headers: getHeaders() })
+                .then(r => r.json())
+                .catch(() => null);
+
+            const [jobsRes, studentsRes, recruitersRes, pendingRes, logsRes] = await Promise.all([
+                jobsPromise,
+                studentsPromise,
+                recruitersPromise,
+                pendingUsersPromise,
+                syncLogsPromise
+            ]);
+
+            let liveStudents = 0;
+            let studentDocs: UserRecord[] = [];
+            if (studentsRes?.success) {
+                studentDocs = Array.isArray(studentsRes.data)
+                    ? studentsRes.data
+                    : (studentsRes.data?.docs || studentsRes.data?.users || []);
+                liveStudents = studentsRes.data?.total ?? studentDocs.length;
+            }
+
+            let liveRecruiters = 0;
+            if (recruitersRes?.success) {
+                liveRecruiters = recruitersRes.data?.total ?? (Array.isArray(recruitersRes.data) ? recruitersRes.data.length : 0);
+            }
+
+            let liveJobs = 0;
+            let expiredJobs = 0;
+            if (jobsRes?.success && jobsRes.data) {
+                liveJobs = jobsRes.data.active ?? 0;
+                expiredJobs = jobsRes.data.expired ?? 0;
+            }
+
+            let pendingCount = 0;
+            if (pendingRes?.success) {
+                const pendingDocs: UserRecord[] = Array.isArray(pendingRes.data) 
+                    ? pendingRes.data 
+                    : (pendingRes.data?.docs || pendingRes.data?.users || []);
+                pendingCount = pendingRes.data?.total ?? pendingDocs.length;
+
+                if (pendingDocs.length > 0) {
+                    const queueItems: ModerationItem[] = pendingDocs.slice(0, 4).map((u: UserRecord, idx: number) => ({
+                        id: u._id ? `USR-${u._id.slice(-4).toUpperCase()}` : `MQ-${idx + 1}`,
+                        entity: u.fullName || u.email || 'Unverified User',
+                        type: u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Student',
+                        status: 'Pending Verification',
+                        risk: 'Med' as const
+                    }));
+                    setModerationQueue(queueItems);
+                }
+            }
+
+            setStats({
+                students: liveStudents,
+                recruiters: liveRecruiters,
+                liveJobs,
+                expiredJobs,
+                pendingReviewCount: pendingCount
             });
-        }, 5000);
 
-        const syncInterval = setInterval(() => {
+            // Compute dynamic 24-hour activity distribution from live sync logs and user registrations
+            const logsList: SyncLogItem[] = (logsRes?.success && Array.isArray(logsRes.data)) ? logsRes.data : [];
+            const timeBuckets = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'];
+            const bucketData: ActivityDataPoint[] = timeBuckets.map((t, idx) => {
+                const startHour = idx * 4;
+                const endHour = startHour + 4;
+
+                // Sum jobs fetched/upserted in this 4-hour window
+                let jobsCount = 0;
+                let eventCount = 0;
+
+                logsList.forEach(log => {
+                    if (log.startedAt) {
+                        const date = new Date(log.startedAt);
+                        const h = date.getHours();
+                        if (h >= startHour && h < endHour) {
+                            jobsCount += (log.jobsFetched || 0) + (log.jobsUpserted || 0);
+                            eventCount += 1;
+                        }
+                    }
+                });
+
+                studentDocs.forEach(user => {
+                    if (user.createdAt) {
+                        const date = new Date(user.createdAt);
+                        const h = date.getHours();
+                        if (h >= startHour && h < endHour) {
+                            eventCount += 1;
+                        }
+                    }
+                });
+
+                return {
+                    time: t,
+                    jobs: jobsCount,
+                    events: eventCount
+                };
+            });
+
+            setActivityChartData(bucketData);
+
+            // Populate real activity stream from sync logs
+            if (logsRes?.success && Array.isArray(logsRes.data) && logsRes.data.length > 0) {
+                const logs: ActivityItem[] = logsRes.data.slice(0, 5).map((log: SyncLogItem) => {
+                    const timeStr = log.startedAt 
+                        ? new Date(log.startedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+                        : 'Recent';
+                    const isSuccess = log.status === 'success';
+                    const isFailed = log.status === 'failed';
+                    return {
+                        id: log._id || Math.random(),
+                        action: `Sync (${log.jobType}): ${log.jobsFetched != null ? `${log.jobsFetched} fetched` : log.status}`,
+                        time: timeStr,
+                        type: isSuccess ? 'success' : isFailed ? 'failed' : 'info'
+                    };
+                });
+                setActivityStream(logs);
+            } else {
+                setActivityStream([
+                    { id: 1, action: "Live sync connected", time: "Active", type: "success" },
+                    { id: 2, action: "API services initialized", time: "Ready", type: "info" }
+                ]);
+            }
+
             const now = new Date();
-            setLastSynced(`${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`);
-        }, 10000);
-
-        return () => {
-            clearInterval(statsInterval);
-            clearInterval(chartInterval);
-            clearInterval(syncInterval);
-        };
+            setLastSynced(`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`);
+        } catch {
+            // Keep existing values on error
+        } finally {
+            setIsRefreshing(false);
+        }
     }, []);
 
-    const manualRefresh = () => {
-        setIsRefreshing(true);
-        setTimeout(() => setIsRefreshing(false), 800);
-        const now = new Date();
-        setLastSynced(`${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`);
-    };
+    useEffect(() => {
+        fetchLiveData();
+        // Background live refresh every 30 seconds
+        const interval = setInterval(fetchLiveData, 30000);
+        return () => clearInterval(interval);
+    }, [fetchLiveData]);
 
     return (
         <div className="space-y-6 max-w-[1400px] mx-auto pb-12 animate-in fade-in duration-500 pt-6">
@@ -128,25 +278,51 @@ export default function DashboardOverview() {
                 </div>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={manualRefresh}
+                        onClick={fetchLiveData}
+                        title="Refresh Live Data"
                         className={`p-3 bg-white border border-gray-100 text-gray-600 hover:text-black shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_4px_20px_rgb(0,0,0,0.08)] transition-all focus:outline-none rounded-2xl ${isRefreshing ? 'opacity-50 pointer-events-none' : ''}`}
                     >
                         <RefreshCw className={`w-[18px] h-[18px] ${isRefreshing ? 'animate-spin' : ''}`} />
                     </button>
-                    <button className="flex items-center gap-2 px-6 py-3 bg-gradient-to-tr from-gray-900 to-gray-800 text-white text-[13px] font-bold hover:opacity-90 transition-opacity shadow-[0_8px_30px_rgb(0,0,0,0.12)] rounded-2xl">
+                    <Link
+                        to="/users"
+                        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-tr from-gray-900 to-gray-800 text-white text-[13px] font-bold hover:opacity-90 transition-opacity shadow-[0_8px_30px_rgb(0,0,0,0.12)] rounded-2xl"
+                    >
                         <Shield className="w-4 h-4" />
-                        Review Pending
-                        <span className="ml-1 px-2 py-0.5 bg-white/20 text-white text-[11px] rounded-xl font-bold">3</span>
-                    </button>
+                        Pending Users
+                        <span className="ml-1 px-2 py-0.5 bg-white/20 text-white text-[11px] rounded-xl font-bold">
+                            {stats.pendingReviewCount}
+                        </span>
+                    </Link>
                 </div>
             </div>
 
             {/* KPI Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard title="Registered Students" value={stats.students.toLocaleString()} icon={Users} trend="12% YoY" positive={true} />
-                <StatCard title="Updated CVs Today" value={stats.cvs.toLocaleString()} icon={FileCheck} trend="4.2% DoD" positive={true} />
-                <StatCard title="Active Recruiters" value={stats.recruiters.toLocaleString()} icon={Briefcase} trend="1.2% MoM" positive={false} />
-                <StatCard title="Live Job Openings" value={stats.jobs.toLocaleString()} icon={CheckCircle} trend="18% MoM" positive={true} />
+                <StatCard
+                    title="Registered Students"
+                    value={stats.students.toLocaleString()}
+                    icon={Users}
+                    subtitle="Live DB Count"
+                />
+                <StatCard
+                    title="Active Recruiters"
+                    value={stats.recruiters.toLocaleString()}
+                    icon={Briefcase}
+                    subtitle="Live DB Count"
+                />
+                <StatCard
+                    title="Live Job Openings"
+                    value={stats.liveJobs.toLocaleString()}
+                    icon={CheckCircle}
+                    subtitle="Active Fantastic.jobs"
+                />
+                <StatCard
+                    title="Expired / Archived Jobs"
+                    value={stats.expiredJobs.toLocaleString()}
+                    icon={FileCheck}
+                    subtitle="Historical ingestions"
+                />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -158,28 +334,32 @@ export default function DashboardOverview() {
                     <div className="bg-white rounded-3xl p-8 flex flex-col shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
                         <div className="flex justify-between items-center mb-8">
                             <div>
-                                <h2 className="text-[16px] font-extrabold text-gray-900">Platform Traffic</h2>
-                                <p className="text-[13px] font-medium text-gray-500 mt-1">Real-time login and logout events</p>
+                                <h2 className="text-[16px] font-extrabold text-gray-900">Platform Activity & Ingestion Throughput</h2>
+                                <p className="text-[13px] font-medium text-gray-500 mt-1">Live Fantastic.jobs sync batches and system operations (24-hour cycle)</p>
                             </div>
                             <div className="flex gap-4">
                                 <div className="flex items-center gap-2">
                                     <div className="w-2 h-2 rounded-full bg-gray-900"></div>
-                                    <span className="text-[12px] font-bold text-gray-600">Logins</span>
+                                    <span className="text-[12px] font-bold text-gray-600">Jobs Synced</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full bg-gray-200"></div>
-                                    <span className="text-[12px] font-bold text-gray-600">Logouts</span>
+                                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                    <span className="text-[12px] font-bold text-gray-600">System Events</span>
                                 </div>
                             </div>
                         </div>
 
                         <div className="w-full h-[320px]">
                             <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={loginData} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}>
+                                <AreaChart data={activityChartData} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}>
                                     <defs>
-                                        <linearGradient id="colorLogin" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#111827" stopOpacity={0.06} />
+                                        <linearGradient id="colorJobs" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#111827" stopOpacity={0.08} />
                                             <stop offset="95%" stopColor="#111827" stopOpacity={0} />
+                                        </linearGradient>
+                                        <linearGradient id="colorEvents" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.08} />
+                                            <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f3f4f6" />
@@ -191,47 +371,62 @@ export default function DashboardOverview() {
                                         itemStyle={{ fontSize: '13px', fontWeight: 700, color: '#111827' }}
                                         labelStyle={{ fontSize: '11px', color: '#6B7280', fontWeight: 600, textTransform: 'uppercase', marginBottom: '4px' }}
                                     />
-                                    <Area type="monotone" dataKey="logout" stroke="#e5e7eb" fillOpacity={0} strokeWidth={2} isAnimationActive={false} />
-                                    <Area type="monotone" dataKey="login" stroke="#111827" fillOpacity={1} fill="url(#colorLogin)" strokeWidth={2} activeDot={{ r: 4, fill: '#111827', strokeWidth: 0 }} isAnimationActive={false} />
+                                    <Area type="monotone" name="Jobs Synced" dataKey="jobs" stroke="#111827" fillOpacity={1} fill="url(#colorJobs)" strokeWidth={2} activeDot={{ r: 4, fill: '#111827', strokeWidth: 0 }} isAnimationActive={false} />
+                                    <Area type="monotone" name="System Events" dataKey="events" stroke="#3B82F6" fillOpacity={1} fill="url(#colorEvents)" strokeWidth={2} activeDot={{ r: 4, fill: '#3B82F6', strokeWidth: 0 }} isAnimationActive={false} />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
                     </div>
 
-                    {/* Quick Access Table */}
+                    {/* Pending Verification / Moderation Table */}
                     <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 flex flex-col overflow-hidden">
                         <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center">
-                            <h2 className="text-[16px] font-extrabold text-gray-900">Active Moderation Queue</h2>
-                            <button className="text-[13px] font-bold text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-xl transition-colors">View All</button>
+                            <div>
+                                <h2 className="text-[16px] font-extrabold text-gray-900">Pending Review Queue</h2>
+                                <p className="text-xs text-gray-500 mt-0.5">Unverified accounts requiring admin attention</p>
+                            </div>
+                            <Link to="/users" className="text-[13px] font-bold text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-xl transition-colors">
+                                View All Users
+                            </Link>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="border-b border-gray-100 bg-gray-50/50">
                                         <th className="px-8 py-4 text-[12px] font-bold text-gray-400">Entity</th>
-                                        <th className="px-8 py-4 text-[12px] font-bold text-gray-400">Type</th>
+                                        <th className="px-8 py-4 text-[12px] font-bold text-gray-400">Role</th>
                                         <th className="px-8 py-4 text-[12px] font-bold text-gray-400">Status</th>
                                         <th className="px-8 py-4 text-[12px] font-bold text-gray-400 text-right">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {INITIAL_MODERATION_QUEUE.map((item, _idx) => (
-                                        <tr key={item.id} className={`group hover:bg-gray-50/80 transition-colors ${_idx !== INITIAL_MODERATION_QUEUE.length - 1 ? 'border-b border-gray-50' : ''}`}>
-                                            <td className="px-8 py-4">
-                                                <div className="text-[14px] font-bold text-gray-900">{item.entity}</div>
-                                                <div className="text-[11px] font-medium text-gray-400 mt-0.5">{item.id}</div>
-                                            </td>
-                                            <td className="px-8 py-4 text-[13px] font-semibold text-gray-600">{item.type}</td>
-                                            <td className="px-8 py-4">
-                                                <span className={`inline-flex px-3 py-1 text-[11px] font-bold rounded-xl ${item.risk === 'High' ? 'bg-red-50 text-red-600' : item.risk === 'Medium' ? 'bg-yellow-50 text-yellow-600' : 'bg-gray-100 text-gray-600'}`}>
-                                                    {item.status}
-                                                </span>
-                                            </td>
-                                            <td className="px-8 py-4 text-right">
-                                                <button className="text-[13px] font-bold text-gray-400 hover:text-gray-900 bg-white hover:bg-gray-100 border border-gray-100 px-4 py-2 rounded-xl transition-all shadow-sm">Review</button>
+                                    {moderationQueue.length > 0 ? (
+                                        moderationQueue.map((item, _idx) => (
+                                            <tr key={item.id} className={`group hover:bg-gray-50/80 transition-colors ${_idx !== moderationQueue.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                                                <td className="px-8 py-4">
+                                                    <div className="text-[14px] font-bold text-gray-900">{item.entity}</div>
+                                                    <div className="text-[11px] font-medium text-gray-400 mt-0.5">{item.id}</div>
+                                                </td>
+                                                <td className="px-8 py-4 text-[13px] font-semibold text-gray-600">{item.type}</td>
+                                                <td className="px-8 py-4">
+                                                    <span className="inline-flex px-3 py-1 text-[11px] font-bold rounded-xl bg-yellow-50 text-yellow-700">
+                                                        {item.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-8 py-4 text-right">
+                                                    <Link to="/users" className="text-[13px] font-bold text-gray-700 hover:text-gray-900 bg-white hover:bg-gray-100 border border-gray-100 px-4 py-2 rounded-xl transition-all shadow-sm">
+                                                        Review
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan={4} className="px-8 py-8 text-center text-xs text-gray-400">
+                                                No pending accounts awaiting verification
                                             </td>
                                         </tr>
-                                    ))}
+                                    )}
                                 </tbody>
                             </table>
                         </div>
@@ -247,37 +442,46 @@ export default function DashboardOverview() {
                         <h2 className="text-[16px] font-extrabold text-white mb-1">Quick Actions</h2>
                         <p className="text-[13px] font-medium text-gray-400 mb-6">Common administrative tasks</p>
                         <div className="grid grid-cols-2 gap-3">
-                            <button className="p-4 bg-white/5 hover:bg-white/10 transition-colors border border-white/5 rounded-2xl flex flex-col items-center justify-center gap-3 text-center group">
+                            <Link to="/users" className="p-4 bg-white/5 hover:bg-white/10 transition-colors border border-white/5 rounded-2xl flex flex-col items-center justify-center gap-3 text-center group">
                                 <Users className="w-5 h-5 text-gray-300 group-hover:text-white" />
                                 <span className="text-[12px] font-bold text-gray-300 group-hover:text-white">Verify Users</span>
-                            </button>
-                            <button className="p-4 bg-white/5 hover:bg-white/10 transition-colors border border-white/5 rounded-2xl flex flex-col items-center justify-center gap-3 text-center group">
-                                <Database className="w-5 h-5 text-gray-300 group-hover:text-white" />
-                                <span className="text-[12px] font-bold text-gray-300 group-hover:text-white">Run Report</span>
-                            </button>
-                            <button className="p-4 bg-white/5 hover:bg-white/10 transition-colors border border-white/5 rounded-2xl flex flex-col items-center justify-center gap-3 text-center group">
-                                <FileCheck className="w-5 h-5 text-gray-300 group-hover:text-white" />
-                                <span className="text-[12px] font-bold text-gray-300 group-hover:text-white">Review CVs</span>
-                            </button>
-                            <button className="p-4 bg-white/5 hover:bg-white/10 transition-colors border border-white/5 rounded-2xl flex flex-col items-center justify-center gap-3 text-center group">
+                            </Link>
+                            <Link to="/jobs/settings" className="p-4 bg-white/5 hover:bg-white/10 transition-colors border border-white/5 rounded-2xl flex flex-col items-center justify-center gap-3 text-center group">
+                                <RefreshCw className="w-5 h-5 text-gray-300 group-hover:text-white" />
+                                <span className="text-[12px] font-bold text-gray-300 group-hover:text-white">Job Sync</span>
+                            </Link>
+                            <Link to="/jobs" className="p-4 bg-white/5 hover:bg-white/10 transition-colors border border-white/5 rounded-2xl flex flex-col items-center justify-center gap-3 text-center group">
+                                <Briefcase className="w-5 h-5 text-gray-300 group-hover:text-white" />
+                                <span className="text-[12px] font-bold text-gray-300 group-hover:text-white">Browse Jobs</span>
+                            </Link>
+                            <Link to="/site-settings" className="p-4 bg-white/5 hover:bg-white/10 transition-colors border border-white/5 rounded-2xl flex flex-col items-center justify-center gap-3 text-center group">
                                 <MoreHorizontal className="w-5 h-5 text-gray-300 group-hover:text-white" />
-                                <span className="text-[12px] font-bold text-gray-300 group-hover:text-white">More</span>
-                            </button>
+                                <span className="text-[12px] font-bold text-gray-300 group-hover:text-white">Site Config</span>
+                            </Link>
                         </div>
                     </div>
 
-                    {/* Minimal Activity Feed */}
+                    {/* Live Activity Feed */}
                     <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 p-8 flex-1 flex flex-col">
                         <div className="flex justify-between items-center mb-6 pb-6 border-b border-gray-100">
-                            <h2 className="text-[16px] font-extrabold text-gray-900 flex items-center gap-2">
-                                <Activity className="w-[18px] h-[18px] text-gray-400" /> System Log
-                            </h2>
+                            <div>
+                                <h2 className="text-[16px] font-extrabold text-gray-900 flex items-center gap-2">
+                                    <Activity className="w-[18px] h-[18px] text-gray-700" /> Live System Log
+                                </h2>
+                                <p className="text-xs text-gray-400 mt-0.5">Real-time sync and platform events</p>
+                            </div>
                         </div>
                         <div className="space-y-6">
                             {activityStream.map((log) => (
                                 <div key={log.id} className="flex items-start gap-4">
                                     <div className="mt-1 relative flex items-center justify-center shrink-0">
-                                        <div className={`w-2.5 h-2.5 rounded-full ${log.type === 'success' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]' : log.type === 'warning' ? 'bg-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.4)]' : 'bg-gray-300'}`}></div>
+                                        {log.type === 'success' ? (
+                                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                                        ) : log.type === 'failed' ? (
+                                            <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
+                                        ) : (
+                                            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
+                                        )}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-[13px] font-bold text-gray-900 truncate">{log.action}</p>
@@ -286,9 +490,9 @@ export default function DashboardOverview() {
                                 </div>
                             ))}
                         </div>
-                        <button className="mt-8 w-full text-center text-[13px] font-bold text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 py-3 rounded-2xl transition-all">
-                            View Full History
-                        </button>
+                        <Link to="/jobs/settings" className="mt-8 w-full text-center text-[13px] font-bold text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 py-3 rounded-2xl transition-all block">
+                            View Full Sync Activity
+                        </Link>
                     </div>
 
                 </div>

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Briefcase, Search, ExternalLink, X, Plus, AlertCircle,
+  Briefcase, Search, ExternalLink, X, AlertCircle,
   RefreshCw, ChevronLeft, ChevronRight, Settings2, ListChecks,
   CheckCircle2, XCircle, Clock, Zap
 } from 'lucide-react';
 import { API_BASE_URL as API_BASE } from '../config/api';
+import JobSyncSettings from './JobSyncSettings';
 
 const LIMIT = 20;
 
@@ -36,18 +37,7 @@ interface Job {
   expiredAt?: string;
 }
 
-interface AdminSettings {
-  sources: string[];
-  industries: string[];
-  taxonomies: string[];
-  timeFrames: {
-    activeAts?: string;
-    activeJb?: string;
-    modifiedAts?: string;
-    expired?: string;
-  };
-  active: boolean;
-}
+
 
 interface SyncLog {
   _id: string;
@@ -121,19 +111,7 @@ export default function Jobs() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [selectedJobLoading, setSelectedJobLoading] = useState(false);
 
-  // Settings tab
-  const [settings, setSettings] = useState<AdminSettings | null>(null);
-  const [settingsLoading, setSettingsLoading] = useState(true);
-  const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsError, setSettingsError] = useState('');
-  const [settingsSaved, setSettingsSaved] = useState(false);
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
-  const [industries, setIndustries] = useState<string[]>([]);
-  const [industryInput, setIndustryInput] = useState('');
-  const [taxonomies, setTaxonomies] = useState<string[]>([]);
-  const [taxonomyInput, setTaxonomyInput] = useState('');
-  const [timeFrames, setTimeFrames] = useState({ activeAts: '', activeJb: '', modifiedAts: '', expired: '' });
-  const [settingsActive, setSettingsActive] = useState(true);
+
 
   // Logs tab
   const [logs, setLogs] = useState<SyncLog[]>([]);
@@ -198,34 +176,7 @@ export default function Jobs() {
     }
   }, [statusFilter, sourceFilter, orgFilter, search, minSalaryFilter, maxSalaryFilter, currencyFilter, page]);
 
-  const fetchSettings = useCallback(async () => {
-    setSettingsLoading(true);
-    setSettingsError('');
-    try {
-      const res = await fetch(`${API_BASE}/admin/jobs/settings`, { headers: getHeaders() });
-      const data = await res.json();
-      if (data.success) {
-        const s: AdminSettings = data.data;
-        setSettings(s);
-        setSelectedSources(s.sources || []);
-        setIndustries(s.industries || []);
-        setTaxonomies(s.taxonomies || []);
-        setTimeFrames({
-          activeAts: s.timeFrames?.activeAts || '',
-          activeJb: s.timeFrames?.activeJb || '',
-          modifiedAts: s.timeFrames?.modifiedAts || '',
-          expired: s.timeFrames?.expired || ''
-        });
-        setSettingsActive(s.active ?? true);
-      } else {
-        setSettingsError(data.message || 'Failed to fetch settings');
-      }
-    } catch {
-      setSettingsError('Network error');
-    } finally {
-      setSettingsLoading(false);
-    }
-  }, []);
+
 
   const fetchLogs = useCallback(async () => {
     setLogsLoading(true);
@@ -266,9 +217,7 @@ export default function Jobs() {
     if (activeTab === 'browse') fetchJobs();
   }, [activeTab, fetchJobs]);
 
-  useEffect(() => {
-    if (activeTab === 'settings' && !settings) fetchSettings();
-  }, [activeTab, settings, fetchSettings]);
+
 
   useEffect(() => {
     if (activeTab === 'logs') fetchLogs();
@@ -294,53 +243,7 @@ export default function Jobs() {
     }
   };
 
-  const toggleSource = (src: string) => {
-    setSelectedSources(prev => prev.includes(src) ? prev.filter(s => s !== src) : [...prev, src]);
-  };
 
-  const addIndustry = () => {
-    const v = industryInput.trim();
-    if (v && !industries.includes(v)) setIndustries([...industries, v]);
-    setIndustryInput('');
-  };
-
-  const addTaxonomy = () => {
-    const v = taxonomyInput.trim();
-    if (v && !taxonomies.includes(v)) setTaxonomies([...taxonomies, v]);
-    setTaxonomyInput('');
-  };
-
-  const saveSettings = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSettingsSaving(true);
-    setSettingsError('');
-    setSettingsSaved(false);
-    try {
-      const res = await fetch(`${API_BASE}/admin/jobs/settings`, {
-        method: 'PUT',
-        headers: getHeaders(),
-        body: JSON.stringify({
-          sources: selectedSources,
-          industries,
-          taxonomies,
-          timeFrames,
-          active: settingsActive
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSettings(data.data);
-        setSettingsSaved(true);
-        setTimeout(() => setSettingsSaved(false), 3000);
-      } else {
-        setSettingsError(data.message || 'Failed to update settings');
-      }
-    } catch {
-      setSettingsError('Network error');
-    } finally {
-      setSettingsSaving(false);
-    }
-  };
 
   const triggerSync = async () => {
     setTriggering(true);
@@ -606,151 +509,9 @@ export default function Jobs() {
         </>
       )}
 
-      {/* Sync Settings Tab */}
+      {/* Job Sync Settings Tab */}
       {activeTab === 'settings' && (
-        <div className="bg-white rounded-3xl p-6 md:p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
-          {settingsLoading ? (
-            <div className="flex justify-center p-12">
-              <div className="w-8 h-8 border-4 border-gray-200 border-t-black rounded-full animate-spin"></div>
-            </div>
-          ) : (
-            <form onSubmit={saveSettings} className="space-y-8">
-              {settingsError && (
-                <div className="bg-red-50 text-red-500 p-4 rounded-xl text-sm font-medium flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4" /> {settingsError}
-                </div>
-              )}
-              {settingsSaved && (
-                <div className="bg-emerald-50 text-emerald-600 p-4 rounded-xl text-sm font-medium flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" /> Settings saved
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-3">Sources</label>
-                <div className="flex flex-wrap gap-3">
-                  {SOURCES.map(src => (
-                    <button
-                      type="button"
-                      key={src}
-                      onClick={() => toggleSource(src)}
-                      className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
-                        selectedSources.includes(src)
-                          ? 'bg-black text-white border-black'
-                          : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      {src}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-3">Industries</label>
-                <div className="flex gap-3 mb-3">
-                  <input
-                    type="text"
-                    value={industryInput}
-                    onChange={e => setIndustryInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addIndustry(); } }}
-                    placeholder="e.g. software-development"
-                    className="flex-1 bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 placeholder-gray-400"
-                  />
-                  <button type="button" onClick={addIndustry} className="px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl text-gray-700 transition-colors">
-                    <Plus className="w-5 h-5" />
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {industries.map(ind => (
-                    <span key={ind} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold">
-                      {ind}
-                      <button type="button" onClick={() => setIndustries(industries.filter(i => i !== ind))} className="hover:text-red-500">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-3">Taxonomies</label>
-                <div className="flex gap-3 mb-3">
-                  <input
-                    type="text"
-                    value={taxonomyInput}
-                    onChange={e => setTaxonomyInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTaxonomy(); } }}
-                    placeholder="e.g. engineering"
-                    className="flex-1 bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 placeholder-gray-400"
-                  />
-                  <button type="button" onClick={addTaxonomy} className="px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl text-gray-700 transition-colors">
-                    <Plus className="w-5 h-5" />
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {taxonomies.map(tax => (
-                    <span key={tax} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold">
-                      {tax}
-                      <button type="button" onClick={() => setTaxonomies(taxonomies.filter(t => t !== tax))} className="hover:text-red-500">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-3">Time Frames</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                  {([
-                    ['activeAts', 'Active ATS'],
-                    ['activeJb', 'Active JB'],
-                    ['modifiedAts', 'Modified ATS'],
-                    ['expired', 'Expired']
-                  ] as const).map(([key, label]) => (
-                    <div key={key}>
-                      <p className="text-xs font-medium text-gray-500 mb-1.5">{label}</p>
-                      <input
-                        type="text"
-                        placeholder="e.g. 1h"
-                        value={timeFrames[key]}
-                        onChange={e => setTimeFrames({ ...timeFrames, [key]: e.target.value })}
-                        className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 placeholder-gray-400"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-5 rounded-2xl bg-gray-50/80 border border-gray-100">
-                <div>
-                  <p className="font-semibold text-gray-900 text-sm">Sync Enabled</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Toggle automatic Fantastic.jobs syncing on or off</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSettingsActive(!settingsActive)}
-                  className={`w-12 h-6 rounded-full transition-colors relative flex items-center ${settingsActive ? 'bg-emerald-500' : 'bg-gray-300'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full mx-1 transition-transform duration-300 shadow-sm ${settingsActive ? 'translate-x-6' : 'translate-x-0'}`} />
-                </button>
-              </div>
-
-              <div className="pt-2 flex justify-end">
-                <button
-                  type="submit"
-                  disabled={settingsSaving}
-                  className={`px-8 py-3.5 rounded-xl text-white font-semibold flex justify-center items-center gap-2 transition-all duration-300 shadow-lg ${
-                    settingsSaving ? 'bg-gray-800 opacity-80 cursor-not-allowed' : 'bg-black hover:bg-gray-800 hover:shadow-black/20'
-                  }`}
-                >
-                  {settingsSaving ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Save Settings'}
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
+        <JobSyncSettings />
       )}
 
       {/* Sync Logs Tab */}

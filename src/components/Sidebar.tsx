@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     ShieldCheck, BookOpen, Settings, LogOut, Calendar, Globe, Newspaper, Clock, SlidersHorizontal,
     Home, Users, BarChart2,
-    Briefcase
+    Briefcase, RefreshCw
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -18,6 +18,7 @@ const navItems = [
     { name: 'Curation', path: '/curation', icon: BookOpen },
     { name: 'Quizzes', path: '/quizzes', icon: Calendar },
     { name: 'Jobs', path: '/jobs', icon: Briefcase },
+    { name: 'Job Sync', path: '/jobs/settings', icon: RefreshCw },
     { name: 'Domains', path: '/domains', icon: Globe },
     { name: 'Consultation', path: '/timeslots', icon: Clock },
     { name: 'Site Setting', path: '/site-settings', icon: SlidersHorizontal },
@@ -34,7 +35,7 @@ export default function Sidebar() {
     };
 
     return (
-        <aside className="w-64 lg:w-72 bg-white flex flex-col h-[calc(100vh-32px)] fixed top-4 left-4 bottom-4 rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] z-50 transition-all overflow-hidden">
+        <aside className="w-64 lg:w-72 bg-white flex flex-col h-[calc(100vh-32px)] fixed top-4 left-4 bottom-4 rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-gray-100 z-50 transition-all overflow-hidden">
 
             {/* Logo area */}
             <div className="h-24 flex items-center px-8 shrink-0">
@@ -53,7 +54,9 @@ export default function Sidebar() {
                 <p className="px-4 text-[11px] font-semibold text-gray-400 tracking-wider mb-2">MENU</p>
 
                 {navItems.map((item) => {
-                    const isActive = location.pathname.startsWith(item.path);
+                    const isActive = item.path === '/dashboard' || item.path === '/jobs'
+                        ? location.pathname === item.path
+                        : location.pathname.startsWith(item.path);
                     return (
                         <Link
                             key={item.name}

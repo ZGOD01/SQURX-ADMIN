@@ -8,6 +8,7 @@ import Moderation from './pages/Moderation';
 import Curation from './pages/Curation';
 import Quizzes from './pages/Quizzes';
 import Jobs from './pages/Jobs';
+import JobSyncSettings from './pages/JobSyncSettings';
 import Domains from './pages/Domains';
 import TimeSlots from './pages/TimeSlots';
 import Settings from './pages/Settings';
@@ -30,6 +31,7 @@ function App() {
           <Route path="curation" element={<Curation />} />
           <Route path="quizzes" element={<Quizzes />} />
           <Route path="jobs" element={<Jobs />} />
+          <Route path="jobs/settings" element={<JobSyncSettings />} />
           <Route path="domains" element={<Domains />} />
           <Route path="timeslots" element={<TimeSlots />} />
           <Route path="settings" element={<Settings />} />
