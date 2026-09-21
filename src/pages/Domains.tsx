@@ -54,7 +54,7 @@ export default function Domains() {
       } else {
         setError(data.message || 'Failed to fetch domains');
       }
-    } catch (err) {
+    } catch {
       setError('Network error');
     } finally {
       setLoading(false);
@@ -79,7 +79,7 @@ export default function Domains() {
       } else {
         setError(data.message || 'Failed to add domain');
       }
-    } catch (err) {
+    } catch {
       setError('Network error');
     } finally {
       setIsAdding(false);
@@ -102,7 +102,7 @@ export default function Domains() {
         fetchDomains();
         setError(data.message || 'Failed to update domain status');
       }
-    } catch (err) {
+    } catch {
       fetchDomains(); // Revert
       setError('Network error');
     }

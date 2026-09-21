@@ -215,7 +215,7 @@ export default function UserManagement() {
                 setError(data.message || 'Failed to retrieve users');
                 showToast(data.message || 'Failed to retrieve users', 'error');
             }
-        } catch (err) {
+        } catch {
             setError('Network error — unable to reach the server.');
             showToast('Network error — unable to reach the server.', 'error');
         } finally {
@@ -910,7 +910,7 @@ export default function UserManagement() {
                                 <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Member Role</label>
                                 <select 
                                     value={inviteData.role}
-                                    onChange={(e) => setInviteData(prev => ({ ...prev, role: e.target.value as any }))}
+                                    onChange={(e) => setInviteData(prev => ({ ...prev, role: e.target.value as 'student' | 'recruiter' | 'consultation' }))}
                                     className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 text-sm font-semibold transition-all"
                                 >
                                     <option value="student">Student</option>
@@ -1053,7 +1053,7 @@ export default function UserManagement() {
                                 <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Member Role</label>
                                 <select 
                                     value={editData.role}
-                                    onChange={(e) => setEditData(prev => ({ ...prev, role: e.target.value as any }))}
+                                    onChange={(e) => setEditData(prev => ({ ...prev, role: e.target.value as 'student' | 'recruiter' | 'consultation' }))}
                                     className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-gray-900 text-sm font-semibold transition-all"
                                 >
                                     <option value="student">Student</option>

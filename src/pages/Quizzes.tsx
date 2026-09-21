@@ -52,7 +52,7 @@ export default function Quizzes() {
       } else {
         setError(data.message || 'Failed to fetch quizzes');
       }
-    } catch (err) {
+    } catch {
       setError('Network error — could not reach the server');
     } finally {
       setLoading(false);
@@ -106,7 +106,7 @@ export default function Quizzes() {
       } else {
         setError(data.message || 'Failed to create quiz');
       }
-    } catch (err) {
+    } catch {
       setError('Network error');
     } finally {
       setSavingQuiz(false);
@@ -127,7 +127,7 @@ export default function Quizzes() {
         fetchQuizzes();
         setError(data.message || 'Failed to update quiz status');
       }
-    } catch (err) {
+    } catch {
       fetchQuizzes();
       setError('Network error');
     }

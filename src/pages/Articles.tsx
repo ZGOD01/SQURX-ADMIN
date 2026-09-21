@@ -379,6 +379,7 @@ function ArticleCard({
 }) {
   const timeAgo = (dateStr?: string) => {
     if (!dateStr) return '';
+    // eslint-disable-next-line react-hooks/purity -- display-only "time ago" formatting, not read into state/JSX identity
     const diff = Date.now() - new Date(dateStr).getTime();
     const days = Math.floor(diff / 86400000);
     if (days === 0) return 'Today';

@@ -97,7 +97,7 @@ const WEEKDAYS = [
  * Handles ISO strings ("2026-08-30T00:00:00.000Z"), plain dates ("2026-08-30"),
  * and various time formats ("09:00 AM", "9:00 AM", "02:30 PM", "14:00", "09:00").
  */
-export function parseSlotDateTime(dateStr: string, timeStr?: string): Date | null {
+function parseSlotDateTime(dateStr: string, timeStr?: string): Date | null {
   if (!dateStr) return null;
   try {
     let year: number;
@@ -153,7 +153,7 @@ export function parseSlotDateTime(dateStr: string, timeStr?: string): Date | nul
   }
 }
 
-export function isSlotInFuture(dateStr: string, timeStr?: string): boolean {
+function isSlotInFuture(dateStr: string, timeStr?: string): boolean {
   const dt = parseSlotDateTime(dateStr, timeStr);
   if (!dt) return false;
   return dt.getTime() > Date.now();
@@ -163,7 +163,7 @@ export function isSlotInFuture(dateStr: string, timeStr?: string): boolean {
  * Filter groups to only future active dates that have at least one upcoming available slot.
  * Slots inside each group are also filtered to only future available ones and sorted chronologically.
  */
-export function getFutureBookableGroups(allGroups: DateGroup[]): DateGroup[] {
+function getFutureBookableGroups(allGroups: DateGroup[]): DateGroup[] {
   return allGroups
     .filter(g => g.isActive !== false)
     .map(g => {
