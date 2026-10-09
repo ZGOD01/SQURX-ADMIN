@@ -91,21 +91,38 @@ function computeSettingsDiff(
     return tChanged ? tDiff : null;
   };
 
-  const activeDiff = compareSyncTask(original.jobs.activeSync, current.jobs.activeSync);
-  if (activeDiff) {
-    jobsDiff.activeSync = activeDiff as SyncTaskConfig;
+  const activeAtsDiff = compareSyncTask(original.jobs.activeAts, current.jobs.activeAts);
+  if (activeAtsDiff) {
+    jobsDiff.activeAts = activeAtsDiff as SyncTaskConfig;
+    jobsDiff['active-ats'] = activeAtsDiff as SyncTaskConfig;
     hasJobsDiff = true;
   }
 
-  const modifiedDiff = compareSyncTask(original.jobs.modifiedSync, current.jobs.modifiedSync);
-  if (modifiedDiff) {
-    jobsDiff.modifiedSync = modifiedDiff as SyncTaskConfig;
+  const activeJbDiff = compareSyncTask(original.jobs.activeJb, current.jobs.activeJb);
+  if (activeJbDiff) {
+    jobsDiff.activeJb = activeJbDiff as SyncTaskConfig;
+    jobsDiff['active-jb'] = activeJbDiff as SyncTaskConfig;
     hasJobsDiff = true;
   }
 
-  const expiredDiff = compareSyncTask(original.jobs.expiredSync, current.jobs.expiredSync);
-  if (expiredDiff) {
-    jobsDiff.expiredSync = expiredDiff as SyncTaskConfig;
+  const modifiedAtsDiff = compareSyncTask(original.jobs.modifiedAts, current.jobs.modifiedAts);
+  if (modifiedAtsDiff) {
+    jobsDiff.modifiedAts = modifiedAtsDiff as SyncTaskConfig;
+    jobsDiff['modified-ats'] = modifiedAtsDiff as SyncTaskConfig;
+    hasJobsDiff = true;
+  }
+
+  const expiredAtsDiff = compareSyncTask(original.jobs.expiredAts, current.jobs.expiredAts);
+  if (expiredAtsDiff) {
+    jobsDiff.expiredAts = expiredAtsDiff as SyncTaskConfig;
+    jobsDiff['expired-ats'] = expiredAtsDiff as SyncTaskConfig;
+    hasJobsDiff = true;
+  }
+
+  const expiredJbDiff = compareSyncTask(original.jobs.expiredJb, current.jobs.expiredJb);
+  if (expiredJbDiff) {
+    jobsDiff.expiredJb = expiredJbDiff as SyncTaskConfig;
+    jobsDiff['expired-jb'] = expiredJbDiff as SyncTaskConfig;
     hasJobsDiff = true;
   }
 
@@ -123,6 +140,7 @@ function computeSettingsDiff(
   }
   if (orgChanged) {
     jobsDiff.organizationsSync = orgDiff as OrgSyncTaskConfig;
+    jobsDiff['ats-organizations'] = orgDiff as OrgSyncTaskConfig;
     hasJobsDiff = true;
   }
 
@@ -221,27 +239,55 @@ export default function JobSyncSettings() {
               s.responseOptions?.includeBasicOrganizationDetails ?? false,
             includeBeta: s.responseOptions?.includeBeta ?? false,
           },
-          jobs: {
-            activeSync: {
-              enabled: s.jobs?.activeSync?.enabled ?? true,
-              cronExpression: s.jobs?.activeSync?.cronExpression || '0 * * * *',
-              timeFrame: s.jobs?.activeSync?.timeFrame || '1h',
-            },
-            modifiedSync: {
-              enabled: s.jobs?.modifiedSync?.enabled ?? true,
-              cronExpression: s.jobs?.modifiedSync?.cronExpression || '0 * * * *',
-              timeFrame: s.jobs?.modifiedSync?.timeFrame || '1h',
-            },
-            expiredSync: {
-              enabled: s.jobs?.expiredSync?.enabled ?? true,
-              cronExpression: s.jobs?.expiredSync?.cronExpression || '0 2 * * *',
-              timeFrame: s.jobs?.expiredSync?.timeFrame || '1d',
-            },
-            organizationsSync: {
-              enabled: s.jobs?.organizationsSync?.enabled ?? true,
-              cronExpression: s.jobs?.organizationsSync?.cronExpression || '0 0 * * 0',
-            },
-          },
+          jobs: (() => {
+            const rawJobs = ((s.jobs || {}) as unknown as Record<string, unknown>);
+            const parseTask = (
+              camelKey: string,
+              kebabKey: string,
+              legacyKey: string,
+              defaultCron: string,
+              defaultTimeFrame: string
+            ): SyncTaskConfig => {
+              const val = (rawJobs[camelKey] || rawJobs[kebabKey] || rawJobs[legacyKey] || {}) as Partial<SyncTaskConfig>;
+              return {
+                enabled: val.enabled ?? true,
+                cronExpression: val.cronExpression || defaultCron,
+                timeFrame: val.timeFrame || defaultTimeFrame,
+              };
+            };
+
+            const activeAts = parseTask('activeAts', 'active-ats', 'activeSync', '0 22 * * 0', '7d');
+            const activeJb = parseTask('activeJb', 'active-jb', 'activeSync', '0 22 * * 0', '7d');
+            const modifiedAts = parseTask('modifiedAts', 'modified-ats', 'modifiedSync', '0 3 * * *', '24h');
+            const expiredAts = parseTask('expiredAts', 'expired-ats', 'expiredSync', '0 2 * * 1', '7d');
+            const expiredJb = parseTask('expiredJb', 'expired-jb', 'expiredSync', '0 2 * * 1', '7d');
+
+            const rawOrg = (rawJobs.organizationsSync || rawJobs['ats-organizations'] || rawJobs.atsOrganizations || {}) as Partial<OrgSyncTaskConfig>;
+            const orgTask: OrgSyncTaskConfig = {
+              enabled: rawOrg.enabled ?? true,
+              cronExpression: rawOrg.cronExpression || '0 20 * * 0',
+            };
+
+            return {
+              activeAts,
+              activeJb,
+              modifiedAts,
+              expiredAts,
+              expiredJb,
+              organizationsSync: orgTask,
+
+              'active-ats': activeAts,
+              'active-jb': activeJb,
+              'modified-ats': modifiedAts,
+              'expired-ats': expiredAts,
+              'expired-jb': expiredJb,
+              'ats-organizations': orgTask,
+
+              activeSync: activeAts,
+              modifiedSync: modifiedAts,
+              expiredSync: expiredAts,
+            };
+          })(),
           filters: {
             title: s.filters?.title || '',
             titleAdvanced: s.filters?.titleAdvanced || '',
@@ -412,12 +458,20 @@ export default function JobSyncSettings() {
     config: JobSchedulerJobs[K]
   ) => {
     if (!formSettings) return;
+    const updatedJobs: JobSchedulerJobs = {
+      ...formSettings.jobs,
+      [jobKey]: config,
+    };
+    if (jobKey === 'activeAts') updatedJobs['active-ats'] = config as SyncTaskConfig;
+    if (jobKey === 'activeJb') updatedJobs['active-jb'] = config as SyncTaskConfig;
+    if (jobKey === 'modifiedAts') updatedJobs['modified-ats'] = config as SyncTaskConfig;
+    if (jobKey === 'expiredAts') updatedJobs['expired-ats'] = config as SyncTaskConfig;
+    if (jobKey === 'expiredJb') updatedJobs['expired-jb'] = config as SyncTaskConfig;
+    if (jobKey === 'organizationsSync') updatedJobs['ats-organizations'] = config as OrgSyncTaskConfig;
+
     setFormSettings({
       ...formSettings,
-      jobs: {
-        ...formSettings.jobs,
-        [jobKey]: config,
-      },
+      jobs: updatedJobs,
     });
   };
 
@@ -634,6 +688,7 @@ export default function JobSyncSettings() {
           logsLoading={logsLoading}
           logsError={logsError}
           onRefreshAll={refreshActivityData}
+          currentFilters={formSettings.filters}
         />
       )}
 

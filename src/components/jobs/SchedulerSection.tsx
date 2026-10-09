@@ -1,14 +1,14 @@
 import { Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
-import type { JobSchedulerJobs } from '../../types/jobsAdmin';
+import type { JobSchedulerJobs, SyncTaskConfig, OrgSyncTaskConfig } from '../../types/jobsAdmin';
 import { validateCronExpression } from '../../utils/cronValidator';
 
 interface SchedulerSectionProps {
   schedulerEnabled: boolean;
   onSchedulerEnabledChange: (enabled: boolean) => void;
   jobs: JobSchedulerJobs;
-  onJobConfigChange: <K extends keyof JobSchedulerJobs>(
-    jobKey: K,
-    config: JobSchedulerJobs[K]
+  onJobConfigChange: (
+    jobKey: keyof JobSchedulerJobs,
+    config: SyncTaskConfig | OrgSyncTaskConfig
   ) => void;
 }
 
@@ -18,38 +18,73 @@ export default function SchedulerSection({
   jobs,
   onJobConfigChange,
 }: SchedulerSectionProps) {
-  // Sync tasks definition
+  // Sync tasks definition for all 6 backend jobs
   const tasks: {
     key: keyof JobSchedulerJobs;
+    backendType: string;
     title: string;
+    badge: string;
+    badgeColor: string;
     description: string;
     hasTimeFrame: boolean;
     defaultTimeFrame?: string;
   }[] = [
     {
-      key: 'activeSync',
-      title: 'Active Jobs Sync',
-      description: 'Fetches newly opened and active job postings across platforms',
+      key: 'activeAts',
+      backendType: 'active-ats',
+      title: 'Active ATS Jobs Sync',
+      badge: 'ATS',
+      badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
+      description: 'Fetches newly opened and active job postings across Applicant Tracking Systems (Greenhouse, Lever, Ashby, Workday)',
       hasTimeFrame: true,
-      defaultTimeFrame: '1h',
+      defaultTimeFrame: '7d',
     },
     {
-      key: 'modifiedSync',
-      title: 'Modified Jobs Sync',
-      description: 'Updates recently altered salaries, descriptions, or status updates',
+      key: 'activeJb',
+      backendType: 'active-jb',
+      title: 'Active Job Boards Sync',
+      badge: 'Job Boards',
+      badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
+      description: 'Fetches newly opened and active postings across external job boards (LinkedIn, Wellfound, YCombinator)',
       hasTimeFrame: true,
-      defaultTimeFrame: '1h',
+      defaultTimeFrame: '7d',
     },
     {
-      key: 'expiredSync',
-      title: 'Expired Jobs Sync',
-      description: 'Detects and flags jobs that have been closed or expired',
+      key: 'modifiedAts',
+      backendType: 'modified-ats',
+      title: 'Modified ATS Jobs Sync',
+      badge: 'ATS',
+      badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
+      description: 'Updates recently altered salaries, descriptions, or status updates for ATS listings',
       hasTimeFrame: true,
-      defaultTimeFrame: '1d',
+      defaultTimeFrame: '24h',
+    },
+    {
+      key: 'expiredAts',
+      backendType: 'expired-ats',
+      title: 'Expired ATS Jobs Sync',
+      badge: 'ATS',
+      badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
+      description: 'Detects and flags ATS jobs that have closed or expired',
+      hasTimeFrame: true,
+      defaultTimeFrame: '7d',
+    },
+    {
+      key: 'expiredJb',
+      backendType: 'expired-jb',
+      title: 'Expired Job Boards Sync',
+      badge: 'Job Boards',
+      badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
+      description: 'Detects and flags job board postings that have closed or expired',
+      hasTimeFrame: true,
+      defaultTimeFrame: '7d',
     },
     {
       key: 'organizationsSync',
+      backendType: 'ats-organizations',
       title: 'Organizations Sync',
+      badge: 'Directory',
+      badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
       description: 'Periodically synchronizes company directories and employer metadata',
       hasTimeFrame: false, // Explicitly NO timeFrame
     },
@@ -134,8 +169,34 @@ export default function SchedulerSection({
           const config = jobs[task.key];
           const isEnabled = config?.enabled ?? false;
           const cron = config?.cronExpression || '';
-          const timeFrame = 'timeFrame' in config ? (config.timeFrame as string) : '';
+          const timeFrame =
+            config && 'timeFrame' in config
+              ? (config.timeFrame as string)
+              : task.defaultTimeFrame || '';
           const validation = validateCronExpression(cron);
+
+          const updateJob = (updates: {
+            enabled?: boolean;
+            cronExpression?: string;
+            timeFrame?: string;
+          }) => {
+            const nextEnabled = updates.enabled !== undefined ? updates.enabled : isEnabled;
+            const nextCron = updates.cronExpression !== undefined ? updates.cronExpression : cron;
+            const nextTf = updates.timeFrame !== undefined ? updates.timeFrame : timeFrame;
+
+            if (task.key === 'organizationsSync') {
+              onJobConfigChange(task.key, {
+                enabled: nextEnabled,
+                cronExpression: nextCron || '0 20 * * 0',
+              });
+            } else {
+              onJobConfigChange(task.key, {
+                enabled: nextEnabled,
+                cronExpression: nextCron || '0 * * * *',
+                timeFrame: nextTf || task.defaultTimeFrame || '7d',
+              });
+            }
+          };
 
           return (
             <div
@@ -148,8 +209,16 @@ export default function SchedulerSection({
             >
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
                     <h3 className="text-base font-bold text-gray-900">{task.title}</h3>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${task.badgeColor}`}
+                    >
+                      {task.badge}
+                    </span>
+                    <span className="font-mono text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                      type: {task.backendType}
+                    </span>
                     <span
                       className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
                         isEnabled
@@ -167,12 +236,7 @@ export default function SchedulerSection({
                   type="button"
                   role="switch"
                   aria-checked={isEnabled}
-                  onClick={() =>
-                    onJobConfigChange(task.key, {
-                      ...config,
-                      enabled: !isEnabled,
-                    })
-                  }
+                  onClick={() => updateJob({ enabled: !isEnabled })}
                   className={`w-11 h-6 rounded-full transition-colors relative flex items-center shrink-0 ${
                     isEnabled ? 'bg-black' : 'bg-gray-200'
                   }`}
@@ -207,12 +271,7 @@ export default function SchedulerSection({
                 <input
                   type="text"
                   value={cron}
-                  onChange={(e) =>
-                    onJobConfigChange(task.key, {
-                      ...config,
-                      cronExpression: e.target.value,
-                    })
-                  }
+                  onChange={(e) => updateJob({ cronExpression: e.target.value })}
                   placeholder="0 * * * *"
                   className={`w-full font-mono bg-gray-50/50 px-4 py-2.5 rounded-xl border text-sm text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent ${
                     validation.isValid
@@ -228,12 +287,7 @@ export default function SchedulerSection({
                     <button
                       key={preset.expr}
                       type="button"
-                      onClick={() =>
-                        onJobConfigChange(task.key, {
-                          ...config,
-                          cronExpression: preset.expr,
-                        })
-                      }
+                      onClick={() => updateJob({ cronExpression: preset.expr })}
                       className={`text-[11px] font-medium px-2 py-0.5 rounded-lg border transition-colors ${
                         cron === preset.expr
                           ? 'bg-black text-white border-black'
@@ -255,15 +309,8 @@ export default function SchedulerSection({
                   <input
                     type="text"
                     value={timeFrame}
-                    onChange={(e) => {
-                      if (task.key !== 'organizationsSync') {
-                        onJobConfigChange(task.key, {
-                          ...config,
-                          timeFrame: e.target.value,
-                        });
-                      }
-                    }}
-                    placeholder="e.g. 1h"
+                    onChange={(e) => updateJob({ timeFrame: e.target.value })}
+                    placeholder={`e.g. ${task.defaultTimeFrame || '7d'}`}
                     className="w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm text-gray-900 placeholder-gray-400"
                   />
                   <p className="text-[11px] text-gray-400 mt-1">

@@ -125,10 +125,27 @@ export interface OrgSyncTaskConfig {
 }
 
 export interface JobSchedulerJobs {
-  activeSync: SyncTaskConfig;
-  modifiedSync: SyncTaskConfig;
-  expiredSync: SyncTaskConfig;
+  // 6 Primary Backend Sync Tasks
+  activeAts: SyncTaskConfig;
+  activeJb: SyncTaskConfig;
+  modifiedAts: SyncTaskConfig;
+  expiredAts: SyncTaskConfig;
+  expiredJb: SyncTaskConfig;
   organizationsSync: OrgSyncTaskConfig;
+
+  // Kebab-case mappings matching backend types
+  'active-ats'?: SyncTaskConfig;
+  'active-jb'?: SyncTaskConfig;
+  'modified-ats'?: SyncTaskConfig;
+  'expired-ats'?: SyncTaskConfig;
+  'expired-jb'?: SyncTaskConfig;
+  'ats-organizations'?: OrgSyncTaskConfig;
+
+  // Legacy fallback aliases
+  activeSync?: SyncTaskConfig;
+  modifiedSync?: SyncTaskConfig;
+  expiredSync?: SyncTaskConfig;
+  atsOrganizations?: OrgSyncTaskConfig;
 }
 
 export interface JobSettings {

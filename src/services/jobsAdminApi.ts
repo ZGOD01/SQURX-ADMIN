@@ -1,6 +1,7 @@
 import { API_BASE_URL } from '../config/api';
 import type {
   JobFilterOptions,
+  JobFilters,
   JobOptionItem,
   JobSettings,
   SyncLogItem,
@@ -195,11 +196,15 @@ export const jobsAdminApi = {
    */
   async triggerSync(
     type: string,
-    timeFrame?: string
+    timeFrame?: string,
+    filters?: Partial<JobFilters> | null
   ): Promise<ApiResponse<{ message?: string }>> {
-    const body: Record<string, string> = { type };
+    const body: Record<string, unknown> = { type };
     if (timeFrame && timeFrame.trim()) {
       body.timeFrame = timeFrame.trim();
+    }
+    if (filters && Object.keys(filters).length > 0) {
+      body.filters = filters;
     }
     return request<{ message?: string }>('/admin/jobs/sync/trigger', {
       method: 'POST',

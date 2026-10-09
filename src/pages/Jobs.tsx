@@ -250,12 +250,14 @@ export default function Jobs() {
     setTriggerMessage('');
     setTriggerError('');
     try {
+      const defaultTf = triggerType === 'modified-ats' ? '24h' : triggerType === 'ats-organizations' ? '' : '7d';
+      const timeFrameToSend = triggerTimeFrame.trim() || (defaultTf ? defaultTf : undefined);
       const res = await fetch(`${API_BASE}/admin/jobs/sync/trigger`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({
           type: triggerType,
-          ...(triggerTimeFrame.trim() ? { timeFrame: triggerTimeFrame.trim() } : {})
+          ...(timeFrameToSend ? { timeFrame: timeFrameToSend } : {})
         })
       });
       const data = await res.json();

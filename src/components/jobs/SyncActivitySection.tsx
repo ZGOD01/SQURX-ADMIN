@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   RefreshCw,
   Zap,
@@ -10,8 +10,9 @@ import {
   Briefcase,
   ListChecks,
   Activity,
+  SlidersHorizontal,
 } from 'lucide-react';
-import type { SyncLogItem, ApiUsage, JobStats } from '../../types/jobsAdmin';
+import type { SyncLogItem, ApiUsage, JobStats, JobFilters } from '../../types/jobsAdmin';
 import { jobsAdminApi } from '../../services/jobsAdminApi';
 
 const SYNC_TYPES = [
@@ -23,6 +24,54 @@ const SYNC_TYPES = [
   'ats-organizations',
 ] as const;
 
+const SYNC_TYPE_META: Record<
+  typeof SYNC_TYPES[number],
+  { label: string; badge: string; defaultTf: string; hasTf: boolean; desc: string }
+> = {
+  'active-ats': {
+    label: 'Active ATS Jobs',
+    badge: 'ATS',
+    defaultTf: '7d',
+    hasTf: true,
+    desc: 'Fetch new and open jobs from Applicant Tracking Systems',
+  },
+  'active-jb': {
+    label: 'Active Job Boards',
+    badge: 'Job Boards',
+    defaultTf: '7d',
+    hasTf: true,
+    desc: 'Fetch new and open jobs from external job boards',
+  },
+  'modified-ats': {
+    label: 'Modified ATS Jobs',
+    badge: 'ATS',
+    defaultTf: '24h',
+    hasTf: true,
+    desc: 'Update altered jobs and descriptions from ATS',
+  },
+  'expired-ats': {
+    label: 'Expired ATS Jobs',
+    badge: 'ATS',
+    defaultTf: '7d',
+    hasTf: true,
+    desc: 'Detect and mark closed or expired ATS jobs',
+  },
+  'expired-jb': {
+    label: 'Expired Job Boards',
+    badge: 'Job Boards',
+    defaultTf: '7d',
+    hasTf: true,
+    desc: 'Detect and mark closed or expired job board postings',
+  },
+  'ats-organizations': {
+    label: 'Organizations Directory',
+    badge: 'Directory',
+    defaultTf: '',
+    hasTf: false,
+    desc: 'Ingest company metadata and directories',
+  },
+};
+
 interface SyncActivitySectionProps {
   stats: JobStats | null;
   usage: ApiUsage | null;
@@ -30,6 +79,7 @@ interface SyncActivitySectionProps {
   logsLoading: boolean;
   logsError: string;
   onRefreshAll: () => Promise<void>;
+  currentFilters?: JobFilters;
 }
 
 export default function SyncActivitySection({
@@ -39,10 +89,12 @@ export default function SyncActivitySection({
   logsLoading,
   logsError,
   onRefreshAll,
+  currentFilters,
 }: SyncActivitySectionProps) {
   // Manual sync state
-  const [triggerType, setTriggerType] = useState<string>('active-ats');
+  const [triggerType, setTriggerType] = useState<typeof SYNC_TYPES[number]>('active-ats');
   const [triggerTimeFrame, setTriggerTimeFrame] = useState('');
+  const [applyFilters, setApplyFilters] = useState<boolean>(true);
   const [isTriggering, setIsTriggering] = useState(false);
   const [triggerSuccessMsg, setTriggerSuccessMsg] = useState<string | null>(null);
   const [triggerErrorMsg, setTriggerErrorMsg] = useState<string | null>(null);
@@ -50,6 +102,30 @@ export default function SyncActivitySection({
   // Logs filter
   const [selectedFilterType, setSelectedFilterType] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Active filters count calculation
+  const activeFiltersCount = useMemo(() => {
+    if (!currentFilters) return 0;
+    let count = 0;
+    if (currentFilters.title?.trim()) count++;
+    if (currentFilters.description?.trim()) count++;
+    if (currentFilters.location?.length) count += currentFilters.location.length;
+    if (currentFilters.organization?.length) count += currentFilters.organization.length;
+    if (currentFilters.sources?.length) count += currentFilters.sources.length;
+    if (currentFilters.domain?.length) count += currentFilters.domain.length;
+    if (currentFilters.organizationIndustry?.length) count += currentFilters.organizationIndustry.length;
+    if (currentFilters.organizationSize?.length) count += currentFilters.organizationSize.length;
+    if (currentFilters.aiExperienceLevel?.length) count += currentFilters.aiExperienceLevel.length;
+    if (currentFilters.aiWorkArrangement?.length) count += currentFilters.aiWorkArrangement.length;
+    if (currentFilters.aiEmploymentType?.length) count += currentFilters.aiEmploymentType.length;
+    if (currentFilters.aiLanguage?.length) count += currentFilters.aiLanguage.length;
+    if (currentFilters.aiEducation?.length) count += currentFilters.aiEducation.length;
+    if (currentFilters.aiTaxonomiesA?.length) count += currentFilters.aiTaxonomiesA.length;
+    if (currentFilters.aiVisaSponsorship !== null) count++;
+    if (currentFilters.hasSalary) count++;
+    if (currentFilters.seniority?.length) count += currentFilters.seniority.length;
+    return count;
+  }, [currentFilters]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -68,19 +144,30 @@ export default function SyncActivitySection({
     setTriggerSuccessMsg(null);
     setTriggerErrorMsg(null);
 
+    const typeMeta = SYNC_TYPE_META[triggerType];
+    const effectiveTimeFrame = typeMeta.hasTf
+      ? (triggerTimeFrame.trim() || typeMeta.defaultTf)
+      : undefined;
+
+    const filtersToSend = applyFilters && currentFilters ? currentFilters : undefined;
+
     try {
       const res = await jobsAdminApi.triggerSync(
         triggerType,
-        triggerTimeFrame.trim() || undefined
+        effectiveTimeFrame,
+        filtersToSend
       );
 
       if (res.success) {
+        const filterNote = applyFilters && activeFiltersCount > 0
+          ? ` (with ${activeFiltersCount} active API filter rules)`
+          : '';
         setTriggerSuccessMsg(
-          res.message || `Successfully executed ${triggerType} synchronization.`
+          res.message || `Successfully executed ${triggerType} synchronization${filterNote}.`
         );
         // Refresh stats, usage, and logs
         await onRefreshAll();
-        setTimeout(() => setTriggerSuccessMsg(null), 6000);
+        setTimeout(() => setTriggerSuccessMsg(null), 7000);
       } else {
         setTriggerErrorMsg(res.message || 'Manual synchronization failed');
       }
@@ -270,59 +357,134 @@ export default function SyncActivitySection({
           </div>
         )}
 
-        <form onSubmit={handleManualSync} className="flex flex-col sm:flex-row gap-3">
-          <div className="sm:w-56">
-            <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">
-              Sync Target Type
-            </label>
-            <select
-              value={triggerType}
-              onChange={(e) => setTriggerType(e.target.value)}
-              className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-black"
-            >
-              {SYNC_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+        <form onSubmit={handleManualSync} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+            <div className="md:col-span-6">
+              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                Sync Target Type
+              </label>
+              <select
+                value={triggerType}
+                onChange={(e) => setTriggerType(e.target.value as typeof SYNC_TYPES[number])}
+                className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-black"
+              >
+                {SYNC_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {SYNC_TYPE_META[t].label} ({t})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-gray-500 mt-1">
+                {SYNC_TYPE_META[triggerType].desc}
+              </p>
+            </div>
+
+            <div className="md:col-span-3">
+              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                Time Frame
+              </label>
+              <input
+                type="text"
+                disabled={!SYNC_TYPE_META[triggerType].hasTf}
+                placeholder={
+                  SYNC_TYPE_META[triggerType].hasTf
+                    ? `Default: ${SYNC_TYPE_META[triggerType].defaultTf}`
+                    : 'N/A for directory'
+                }
+                value={triggerTimeFrame}
+                onChange={(e) => setTriggerTimeFrame(e.target.value)}
+                className={`w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-black ${
+                  !SYNC_TYPE_META[triggerType].hasTf ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''
+                }`}
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                {SYNC_TYPE_META[triggerType].hasTf
+                  ? `Leave empty to use ${SYNC_TYPE_META[triggerType].defaultTf}`
+                  : 'Organization sync does not query by timeframe'}
+              </p>
+            </div>
+
+            <div className="md:col-span-3 flex items-start md:items-end">
+              <button
+                type="submit"
+                disabled={isTriggering}
+                className={`w-full px-6 py-3 rounded-xl font-bold text-sm text-white shadow-md transition-all flex items-center justify-center gap-2 ${
+                  isTriggering
+                    ? 'bg-gray-500 cursor-not-allowed opacity-80'
+                    : 'bg-black hover:bg-gray-800'
+                }`}
+              >
+                {isTriggering ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Syncing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4 text-amber-300" />
+                    <span>Run Sync Now</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
-          <div className="flex-1">
-            <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">
-              Time Frame (Optional)
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. 1h, 24h, 7d (leave blank for default)"
-              value={triggerTimeFrame}
-              onChange={(e) => setTriggerTimeFrame(e.target.value)}
-              className="w-full bg-gray-50/50 px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-black"
-            />
-          </div>
+          {/* ── API Filters Integration Bar ──────────────────────────────── */}
+          <div className="pt-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-50/60 p-3.5 rounded-2xl border">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={applyFilters}
+                onClick={() => setApplyFilters(!applyFilters)}
+                className={`w-10 h-5.5 rounded-full transition-colors relative flex items-center shrink-0 ${
+                  applyFilters ? 'bg-emerald-600' : 'bg-gray-300'
+                }`}
+              >
+                <div
+                  className={`w-3.5 h-3.5 bg-white rounded-full mx-1 transition-transform duration-200 shadow-sm ${
+                    applyFilters ? 'translate-x-4.5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+              <div>
+                <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-gray-500" />
+                  Apply Configured API Filters to Manual Sync
+                </span>
+                <p className="text-[11px] text-gray-500">
+                  {applyFilters ? (
+                    activeFiltersCount > 0 ? (
+                      <span className="text-emerald-700 font-medium">
+                        Active: Sending {activeFiltersCount} filter criteria (keywords, taxonomy, locations, sources)
+                      </span>
+                    ) : (
+                      <span>All configured filters are currently open (no restrictive filters set)</span>
+                    )
+                  ) : (
+                    <span className="text-amber-700 font-medium">
+                      Bypassing API filters: Backend will query without custom restrictions
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
 
-          <div className="flex items-end">
-            <button
-              type="submit"
-              disabled={isTriggering}
-              className={`w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-sm text-white shadow-md transition-all flex items-center justify-center gap-2 ${
-                isTriggering
-                  ? 'bg-gray-500 cursor-not-allowed opacity-80'
-                  : 'bg-black hover:bg-gray-800'
-              }`}
-            >
-              {isTriggering ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Syncing...</span>
-                </>
-              ) : (
-                <>
-                  <Zap className="w-4 h-4 text-amber-300" />
-                  <span>Run Now</span>
-                </>
-              )}
-            </button>
+            <div className="shrink-0">
+              <span
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+                  applyFilters && activeFiltersCount > 0
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : applyFilters
+                    ? 'bg-blue-50 text-blue-800 border-blue-200'
+                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                }`}
+              >
+                {applyFilters
+                  ? `${activeFiltersCount} Filter Rules Linked`
+                  : 'Filters Disabled for Trigger'}
+              </span>
+            </div>
           </div>
         </form>
       </div>
