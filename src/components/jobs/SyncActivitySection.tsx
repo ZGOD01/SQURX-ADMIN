@@ -11,7 +11,7 @@ import {
   ListChecks,
   Activity,
 } from 'lucide-react';
-import type { SyncLogItem, ApiUsage, JobStats } from '../../types/jobsAdmin';
+import type { SyncLogItem, ApiUsage, JobStats, JobSettings } from '../../types/jobsAdmin';
 import { jobsAdminApi } from '../../services/jobsAdminApi';
 
 const SYNC_TYPES = [
@@ -21,7 +21,24 @@ const SYNC_TYPES = [
   'expired-ats',
   'expired-jb',
   'ats-organizations',
+  'expired-boards',
 ] as const;
+
+/** Keep only meaningful filter values (non-empty arrays/strings, booleans, numbers). */
+function buildFilterOverrides(filters: object): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(filters)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'string') {
+      if (v.trim() !== '') out[k] = v;
+    } else if (Array.isArray(v)) {
+      if (v.length > 0) out[k] = v;
+    } else if (typeof v === 'boolean' || (typeof v === 'number' && !Number.isNaN(v))) {
+      out[k] = v;
+    }
+  }
+  return out;
+}
 
 interface SyncActivitySectionProps {
   stats: JobStats | null;
@@ -30,6 +47,7 @@ interface SyncActivitySectionProps {
   logsLoading: boolean;
   logsError: string;
   onRefreshAll: () => Promise<void>;
+  currentSettings: JobSettings | null;
 }
 
 export default function SyncActivitySection({
@@ -39,6 +57,7 @@ export default function SyncActivitySection({
   logsLoading,
   logsError,
   onRefreshAll,
+  currentSettings,
 }: SyncActivitySectionProps) {
   // Manual sync state
   const [triggerType, setTriggerType] = useState<string>('active-ats');
@@ -69,10 +88,30 @@ export default function SyncActivitySection({
     setTriggerErrorMsg(null);
 
     try {
-      const res = await jobsAdminApi.triggerSync(
-        triggerType,
-        triggerTimeFrame.trim() || undefined
-      );
+      let timeFrame: string | undefined;
+      let filters: Record<string, unknown> | undefined;
+      let maxJobs: number | undefined;
+      const isActive = triggerType === 'active-ats' || triggerType === 'active-jb';
+      const isModified = triggerType === 'modified-ats';
+      const isExpired = triggerType === 'expired-ats' || triggerType === 'expired-jb';
+
+      if ((isActive || isModified || isExpired) && currentSettings) {
+        const jobs = currentSettings.jobs;
+        const cardTf = isActive
+          ? jobs?.activeSync?.timeFrame
+          : isModified
+            ? jobs?.modifiedSync?.timeFrame
+            : jobs?.expiredSync?.timeFrame;
+        timeFrame = triggerTimeFrame.trim() || cardTf?.trim() || undefined;
+        const overrides = buildFilterOverrides(currentSettings.filters ?? {});
+        if (Object.keys(overrides).length > 0) filters = overrides;
+        const mj = jobs?.activeSync?.maxJobs;
+        if (isActive && typeof mj === 'number' && mj > 0) maxJobs = mj;
+      } else if (isActive || isModified || isExpired) {
+        timeFrame = triggerTimeFrame.trim() || undefined;
+      }
+
+      const res = await jobsAdminApi.triggerSync(triggerType, timeFrame, filters, maxJobs);
 
       if (res.success) {
         setTriggerSuccessMsg(
@@ -325,6 +364,9 @@ export default function SyncActivitySection({
             </button>
           </div>
         </form>
+        <p className="text-xs text-gray-500 mt-3">
+          Manual runs use the filters and time frame currently shown on screen (even if not saved). Scheduled runs use saved settings.
+        </p>
       </div>
 
       {/* ── Sync History Logs Table ──────────────────────────────────────── */}

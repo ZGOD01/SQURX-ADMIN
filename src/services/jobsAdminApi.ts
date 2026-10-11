@@ -195,11 +195,19 @@ export const jobsAdminApi = {
    */
   async triggerSync(
     type: string,
-    timeFrame?: string
+    timeFrame?: string,
+    filters?: Record<string, unknown>,
+    maxJobs?: number
   ): Promise<ApiResponse<{ message?: string }>> {
-    const body: Record<string, string> = { type };
+    const body: Record<string, unknown> = { type };
     if (timeFrame && timeFrame.trim()) {
       body.timeFrame = timeFrame.trim();
+    }
+    if (filters && Object.keys(filters).length > 0) {
+      body.filters = filters;
+    }
+    if (typeof maxJobs === 'number' && maxJobs > 0) {
+      body.maxJobs = maxJobs;
     }
     return request<{ message?: string }>('/admin/jobs/sync/trigger', {
       method: 'POST',

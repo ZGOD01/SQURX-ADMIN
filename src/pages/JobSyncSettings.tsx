@@ -17,6 +17,9 @@ import type {
   JobSchedulerJobs,
   SyncTaskConfig,
   OrgSyncTaskConfig,
+  ActiveSyncConfig,
+  ExpiredSyncConfig,
+  CatchUpConfig,
   JobFilterOptions,
   SyncLogItem,
   ApiUsage,
@@ -92,8 +95,13 @@ function computeSettingsDiff(
   };
 
   const activeDiff = compareSyncTask(original.jobs.activeSync, current.jobs.activeSync);
-  if (activeDiff) {
-    jobsDiff.activeSync = activeDiff as SyncTaskConfig;
+  const activeExtra: Partial<ActiveSyncConfig> = {};
+  const oa = original.jobs.activeSync;
+  const ca = current.jobs.activeSync;
+  if (oa.maxJobs !== ca.maxJobs) activeExtra.maxJobs = ca.maxJobs;
+  if (oa.atsSharePercent !== ca.atsSharePercent) activeExtra.atsSharePercent = ca.atsSharePercent;
+  if (activeDiff || Object.keys(activeExtra).length > 0) {
+    jobsDiff.activeSync = { ...activeDiff, ...activeExtra } as ActiveSyncConfig;
     hasJobsDiff = true;
   }
 
@@ -104,8 +112,18 @@ function computeSettingsDiff(
   }
 
   const expiredDiff = compareSyncTask(original.jobs.expiredSync, current.jobs.expiredSync);
-  if (expiredDiff) {
-    jobsDiff.expiredSync = expiredDiff as SyncTaskConfig;
+  const expiredExtra: Partial<ExpiredSyncConfig> = {};
+  const oe = original.jobs.expiredSync;
+  const ce = current.jobs.expiredSync;
+  if (oe.expireAfterDays !== ce.expireAfterDays) expiredExtra.expireAfterDays = ce.expireAfterDays;
+  if (
+    oe.expireBoardSources.length !== ce.expireBoardSources.length ||
+    oe.expireBoardSources.some((v, i) => v !== ce.expireBoardSources[i])
+  ) {
+    expiredExtra.expireBoardSources = ce.expireBoardSources;
+  }
+  if (expiredDiff || Object.keys(expiredExtra).length > 0) {
+    jobsDiff.expiredSync = { ...expiredDiff, ...expiredExtra } as ExpiredSyncConfig;
     hasJobsDiff = true;
   }
 
@@ -121,8 +139,24 @@ function computeSettingsDiff(
     orgDiff.cronExpression = currOrg.cronExpression;
     orgChanged = true;
   }
+  if (origOrg.timeoutSeconds !== currOrg.timeoutSeconds) {
+    orgDiff.timeoutSeconds = currOrg.timeoutSeconds;
+    orgChanged = true;
+  }
   if (orgChanged) {
     jobsDiff.organizationsSync = orgDiff as OrgSyncTaskConfig;
+    hasJobsDiff = true;
+  }
+
+  const catchDiff: Partial<CatchUpConfig> = {};
+  if (original.jobs.catchUp.enabled !== current.jobs.catchUp.enabled) {
+    catchDiff.enabled = current.jobs.catchUp.enabled;
+  }
+  if (original.jobs.catchUp.maxAgeDays !== current.jobs.catchUp.maxAgeDays) {
+    catchDiff.maxAgeDays = current.jobs.catchUp.maxAgeDays;
+  }
+  if (Object.keys(catchDiff).length > 0) {
+    jobsDiff.catchUp = catchDiff as CatchUpConfig;
     hasJobsDiff = true;
   }
 
@@ -226,6 +260,8 @@ export default function JobSyncSettings() {
               enabled: s.jobs?.activeSync?.enabled ?? true,
               cronExpression: s.jobs?.activeSync?.cronExpression || '0 * * * *',
               timeFrame: s.jobs?.activeSync?.timeFrame || '1h',
+              maxJobs: s.jobs?.activeSync?.maxJobs ?? 0,
+              atsSharePercent: s.jobs?.activeSync?.atsSharePercent ?? 50,
             },
             modifiedSync: {
               enabled: s.jobs?.modifiedSync?.enabled ?? true,
@@ -236,10 +272,19 @@ export default function JobSyncSettings() {
               enabled: s.jobs?.expiredSync?.enabled ?? true,
               cronExpression: s.jobs?.expiredSync?.cronExpression || '0 2 * * *',
               timeFrame: s.jobs?.expiredSync?.timeFrame || '1d',
+              expireAfterDays: s.jobs?.expiredSync?.expireAfterDays ?? 0,
+              expireBoardSources: Array.isArray(s.jobs?.expiredSync?.expireBoardSources)
+                ? s.jobs.expiredSync.expireBoardSources
+                : ['wellfound', 'ycombinator'],
             },
             organizationsSync: {
               enabled: s.jobs?.organizationsSync?.enabled ?? true,
               cronExpression: s.jobs?.organizationsSync?.cronExpression || '0 0 * * 0',
+              timeoutSeconds: s.jobs?.organizationsSync?.timeoutSeconds ?? 300,
+            },
+            catchUp: {
+              enabled: s.jobs?.catchUp?.enabled ?? false,
+              maxAgeDays: s.jobs?.catchUp?.maxAgeDays ?? 7,
             },
           },
           filters: {
@@ -439,6 +484,23 @@ export default function JobSyncSettings() {
         keyof JobSchedulerJobs,
         Partial<SyncTaskConfig | OrgSyncTaskConfig>
       ][];
+      const j = formSettings.jobs;
+      const numErr =
+        j.activeSync.maxJobs < 0 || !Number.isFinite(j.activeSync.maxJobs)
+          ? 'Max jobs per run must be 0 or greater'
+          : j.activeSync.atsSharePercent < 0 || j.activeSync.atsSharePercent > 100
+          ? 'ATS share must be between 0 and 100'
+          : j.expiredSync.expireAfterDays < 0
+          ? 'Expire-after days must be 0 or greater'
+          : j.organizationsSync.timeoutSeconds < 30
+          ? 'Organizations sync timeout must be at least 30 seconds'
+          : j.catchUp.maxAgeDays < 1
+          ? 'Catch-up max age must be at least 1 day'
+          : null;
+      if (numErr) {
+        setSaveErrorMsg(`Cannot save: ${numErr}`);
+        return;
+      }
       for (const [taskName, taskConfig] of jobEntries) {
         if (taskConfig?.cronExpression) {
           const check = validateCronExpression(taskConfig.cronExpression);
@@ -634,6 +696,7 @@ export default function JobSyncSettings() {
           logsLoading={logsLoading}
           logsError={logsError}
           onRefreshAll={refreshActivityData}
+          currentSettings={formSettings}
         />
       )}
 

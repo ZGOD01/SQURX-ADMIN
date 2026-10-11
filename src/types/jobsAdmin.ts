@@ -119,17 +119,41 @@ export interface SyncTaskConfig {
   timeFrame: string;
 }
 
+export interface ActiveSyncConfig extends SyncTaskConfig {
+  /** Max jobs per run, shared across ATS + job boards (0 = unlimited) */
+  maxJobs: number;
+  /** Percentage (0-100) of maxJobs allocated to ATS */
+  atsSharePercent: number;
+}
+
+export interface ExpiredSyncConfig extends SyncTaskConfig {
+  /** Expire job-board jobs older than N days (0 = disabled) */
+  expireAfterDays: number;
+  expireBoardSources: string[];
+}
+
 export interface OrgSyncTaskConfig {
   enabled: boolean;
   cronExpression: string;
+  /** Minimum 30 */
+  timeoutSeconds: number;
+}
+
+export interface CatchUpConfig {
+  enabled: boolean;
+  /** Minimum 1 */
+  maxAgeDays: number;
 }
 
 export interface JobSchedulerJobs {
-  activeSync: SyncTaskConfig;
+  activeSync: ActiveSyncConfig;
   modifiedSync: SyncTaskConfig;
-  expiredSync: SyncTaskConfig;
+  expiredSync: ExpiredSyncConfig;
   organizationsSync: OrgSyncTaskConfig;
+  catchUp: CatchUpConfig;
 }
+
+export type SyncTaskKey = 'activeSync' | 'modifiedSync' | 'expiredSync' | 'organizationsSync';
 
 export interface JobSettings {
   filters: JobFilters;

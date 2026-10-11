@@ -1,5 +1,6 @@
-import { Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
-import type { JobSchedulerJobs } from '../../types/jobsAdmin';
+import { useState } from 'react';
+import { Clock, CheckCircle2, AlertTriangle, X } from 'lucide-react';
+import type { JobSchedulerJobs, SyncTaskKey } from '../../types/jobsAdmin';
 import { validateCronExpression } from '../../utils/cronValidator';
 
 interface SchedulerSectionProps {
@@ -12,15 +13,38 @@ interface SchedulerSectionProps {
   ) => void;
 }
 
+const TIME_FRAME_PRESETS = ['1h', '24h', '7d', '6m'];
+
+const inputClass =
+  'w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm text-gray-900 placeholder-gray-400';
+const labelClass = 'block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2';
+
+const parseNum = (v: string) => (v === '' ? 0 : Number(v));
+
 export default function SchedulerSection({
   schedulerEnabled,
   onSchedulerEnabledChange,
   jobs,
   onJobConfigChange,
 }: SchedulerSectionProps) {
+  const [sourceDraft, setSourceDraft] = useState('');
+
+  const addBoardSource = () => {
+    const v = sourceDraft.trim().toLowerCase();
+    setSourceDraft('');
+    if (!v || jobs.expiredSync.expireBoardSources.includes(v)) return;
+    onJobConfigChange('expiredSync', {
+      ...jobs.expiredSync,
+      expireBoardSources: [...jobs.expiredSync.expireBoardSources, v],
+    });
+  };
+
+  const maxJobs = jobs.activeSync.maxJobs;
+  const atsJobs = Math.round((maxJobs * jobs.activeSync.atsSharePercent) / 100);
+
   // Sync tasks definition
   const tasks: {
-    key: keyof JobSchedulerJobs;
+    key: SyncTaskKey;
     title: string;
     description: string;
     hasTimeFrame: boolean;
@@ -135,6 +159,9 @@ export default function SchedulerSection({
           const isEnabled = config?.enabled ?? false;
           const cron = config?.cronExpression || '';
           const timeFrame = 'timeFrame' in config ? (config.timeFrame as string) : '';
+          const activeCfg = task.key === 'activeSync' ? jobs.activeSync : null;
+          const expiredCfg = task.key === 'expiredSync' ? jobs.expiredSync : null;
+          const orgCfg = task.key === 'organizationsSync' ? jobs.organizationsSync : null;
           const validation = validateCronExpression(cron);
 
           return (
@@ -264,16 +291,208 @@ export default function SchedulerSection({
                       }
                     }}
                     placeholder="e.g. 1h"
-                    className="w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm text-gray-900 placeholder-gray-400"
+                    className={inputClass}
                   />
+                  <div className="flex flex-wrap items-center gap-1.5 pt-2">
+                    <span className="text-[11px] text-gray-400 mr-1">Fantastic.jobs:</span>
+                    {TIME_FRAME_PRESETS.map((tf) => (
+                      <button
+                        key={tf}
+                        type="button"
+                        onClick={() =>
+                          task.key !== 'organizationsSync' &&
+                          onJobConfigChange(task.key, { ...config, timeFrame: tf } as never)
+                        }
+                        className={`text-[11px] font-medium px-2 py-0.5 rounded-lg border transition-colors ${
+                          timeFrame === tf
+                            ? 'bg-black text-white border-black'
+                            : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        {tf}
+                      </button>
+                    ))}
+                  </div>
                   <p className="text-[11px] text-gray-400 mt-1">
                     Defines how far back Fantastic.jobs queries for updates during each run.
                   </p>
                 </div>
               )}
+
+              {activeCfg && (
+                <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+                  <div>
+                    <label className={labelClass}>
+                      Max jobs per run (shared across ATS + Job boards)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={activeCfg.maxJobs}
+                      onChange={(e) =>
+                        onJobConfigChange('activeSync', {
+                          ...activeCfg,
+                          maxJobs: parseNum(e.target.value),
+                        })
+                      }
+                      className={inputClass}
+                    />
+                    <p className="text-[11px] text-gray-400 mt-1">0 = unlimited.</p>
+                  </div>
+                  <div>
+                    <label className={labelClass}>ATS share %</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={activeCfg.atsSharePercent}
+                      onChange={(e) =>
+                        onJobConfigChange('activeSync', {
+                          ...activeCfg,
+                          atsSharePercent: parseNum(e.target.value),
+                        })
+                      }
+                      className={inputClass}
+                    />
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      {maxJobs > 0
+                        ? `ATS: ${atsJobs} jobs, Job boards: ${maxJobs - atsJobs} jobs`
+                        : 'Unlimited jobs per run (set Max jobs to split by share)'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {expiredCfg && (
+                <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+                  <div>
+                    <label className={labelClass}>
+                      Expire job-board jobs older than N days (0 = off)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={expiredCfg.expireAfterDays}
+                      onChange={(e) =>
+                        onJobConfigChange('expiredSync', {
+                          ...expiredCfg,
+                          expireAfterDays: parseNum(e.target.value),
+                        })
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Job-board sources to expire</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {expiredCfg.expireBoardSources.map((src) => (
+                        <span
+                          key={src}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg bg-gray-100 text-gray-700"
+                        >
+                          {src}
+                          <button
+                            type="button"
+                            aria-label={`Remove ${src}`}
+                            onClick={() =>
+                              onJobConfigChange('expiredSync', {
+                                ...expiredCfg,
+                                expireBoardSources: expiredCfg.expireBoardSources.filter(
+                                  (v) => v !== src
+                                ),
+                              })
+                            }
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      value={sourceDraft}
+                      onChange={(e) => setSourceDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ',') {
+                          e.preventDefault();
+                          addBoardSource();
+                        }
+                      }}
+                      onBlur={addBoardSource}
+                      placeholder="Type a source and press Enter"
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {orgCfg && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <label className={labelClass}>Timeout (seconds, min 30)</label>
+                  <input
+                    type="number"
+                    min={30}
+                    step={1}
+                    value={orgCfg.timeoutSeconds}
+                    onChange={(e) =>
+                      onJobConfigChange('organizationsSync', {
+                        ...orgCfg,
+                        timeoutSeconds: parseNum(e.target.value),
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </div>
+              )}
             </div>
           );
         })}
+      </div>
+
+      {/* ── Catch-up Card ────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-3xl p-6 md:p-7 border shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-gray-100">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-bold text-gray-900">Catch-up</h3>
+            <p className="text-xs text-gray-500 mt-1">Run missed weekly sync on server start</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={jobs.catchUp.enabled}
+            onClick={() =>
+              onJobConfigChange('catchUp', { ...jobs.catchUp, enabled: !jobs.catchUp.enabled })
+            }
+            className={`w-11 h-6 rounded-full transition-colors relative flex items-center shrink-0 ${
+              jobs.catchUp.enabled ? 'bg-black' : 'bg-gray-200'
+            }`}
+          >
+            <div
+              className={`w-4 h-4 bg-white rounded-full mx-1 transition-transform duration-200 shadow-sm ${
+                jobs.catchUp.enabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+        <div className="mt-4 pt-4 border-t border-gray-100 max-w-xs">
+          <label className={labelClass}>Max age (days, min 1)</label>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={jobs.catchUp.maxAgeDays}
+            onChange={(e) =>
+              onJobConfigChange('catchUp', {
+                ...jobs.catchUp,
+                maxAgeDays: parseNum(e.target.value),
+              })
+            }
+            className={inputClass}
+          />
+        </div>
       </div>
     </div>
   );
