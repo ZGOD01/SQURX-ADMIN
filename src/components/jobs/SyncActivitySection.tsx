@@ -12,7 +12,7 @@ import {
   Activity,
   SlidersHorizontal,
 } from 'lucide-react';
-import type { SyncLogItem, ApiUsage, JobStats, JobFilters } from '../../types/jobsAdmin';
+import type { SyncLogItem, ApiUsage, JobStats, JobFilters, JobSettings } from '../../types/jobsAdmin';
 import { jobsAdminApi } from '../../services/jobsAdminApi';
 
 const SYNC_TYPES = [
@@ -22,6 +22,7 @@ const SYNC_TYPES = [
   'expired-ats',
   'expired-jb',
   'ats-organizations',
+  'expired-boards',
 ] as const;
 
 const SYNC_TYPE_META: Record<
@@ -70,7 +71,30 @@ const SYNC_TYPE_META: Record<
     hasTf: false,
     desc: 'Ingest company metadata and directories',
   },
+  'expired-boards': {
+    label: 'Expired Job Boards (By Age)',
+    badge: 'Job Boards',
+    defaultTf: '7d',
+    hasTf: true,
+    desc: 'Expire job-board postings older than configured days',
+  },
 };
+
+/** Keep only meaningful filter values (non-empty arrays/strings, booleans, numbers). */
+function buildFilterOverrides(filters: object): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(filters)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'string') {
+      if (v.trim() !== '') out[k] = v;
+    } else if (Array.isArray(v)) {
+      if (v.length > 0) out[k] = v;
+    } else if (typeof v === 'boolean' || (typeof v === 'number' && !Number.isNaN(v))) {
+      out[k] = v;
+    }
+  }
+  return out;
+}
 
 interface SyncActivitySectionProps {
   stats: JobStats | null;
@@ -79,6 +103,7 @@ interface SyncActivitySectionProps {
   logsLoading: boolean;
   logsError: string;
   onRefreshAll: () => Promise<void>;
+  currentSettings?: JobSettings | null;
   currentFilters?: JobFilters;
 }
 
@@ -89,8 +114,10 @@ export default function SyncActivitySection({
   logsLoading,
   logsError,
   onRefreshAll,
-  currentFilters,
+  currentSettings,
+  currentFilters: propFilters,
 }: SyncActivitySectionProps) {
+  const currentFilters = currentSettings?.filters || propFilters;
   // Manual sync state
   const [triggerType, setTriggerType] = useState<typeof SYNC_TYPES[number]>('active-ats');
   const [triggerTimeFrame, setTriggerTimeFrame] = useState('');
@@ -149,13 +176,25 @@ export default function SyncActivitySection({
       ? (triggerTimeFrame.trim() || typeMeta.defaultTf)
       : undefined;
 
-    const filtersToSend = applyFilters && currentFilters ? currentFilters : undefined;
-
     try {
+      let filters: Record<string, unknown> | undefined;
+      if (applyFilters && currentFilters) {
+        const overrides = buildFilterOverrides(currentFilters);
+        if (Object.keys(overrides).length > 0) filters = overrides;
+      }
+
+      let maxJobs: number | undefined;
+      const isActive = triggerType === 'active-ats' || triggerType === 'active-jb';
+      const mj = currentSettings?.jobs?.activeSync?.maxJobs;
+      if (isActive && typeof mj === 'number' && mj > 0) {
+        maxJobs = mj;
+      }
+
       const res = await jobsAdminApi.triggerSync(
         triggerType,
         effectiveTimeFrame,
-        filtersToSend
+        filters,
+        maxJobs
       );
 
       if (res.success) {
@@ -487,6 +526,9 @@ export default function SyncActivitySection({
             </div>
           </div>
         </form>
+        <p className="text-xs text-gray-500 mt-3">
+          Manual runs use the filters and time frame currently shown on screen (even if not saved). Scheduled runs use saved settings.
+        </p>
       </div>
 
       {/* ── Sync History Logs Table ──────────────────────────────────────── */}

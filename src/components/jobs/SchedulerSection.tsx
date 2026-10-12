@@ -1,16 +1,25 @@
-import { Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
-import type { JobSchedulerJobs, SyncTaskConfig, OrgSyncTaskConfig } from '../../types/jobsAdmin';
+import { useState } from 'react';
+import { Clock, CheckCircle2, AlertTriangle, X } from 'lucide-react';
+import type { JobSchedulerJobs, SyncTaskKey } from '../../types/jobsAdmin';
 import { validateCronExpression } from '../../utils/cronValidator';
 
 interface SchedulerSectionProps {
   schedulerEnabled: boolean;
   onSchedulerEnabledChange: (enabled: boolean) => void;
   jobs: JobSchedulerJobs;
-  onJobConfigChange: (
-    jobKey: keyof JobSchedulerJobs,
-    config: SyncTaskConfig | OrgSyncTaskConfig
+  onJobConfigChange: <K extends keyof JobSchedulerJobs>(
+    jobKey: K,
+    config: JobSchedulerJobs[K]
   ) => void;
 }
+
+const TIME_FRAME_PRESETS = ['1h', '24h', '7d', '6m'];
+
+const inputClass =
+  'w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm text-gray-900 placeholder-gray-400';
+const labelClass = 'block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2';
+
+const parseNum = (v: string) => (v === '' ? 0 : Number(v));
 
 export default function SchedulerSection({
   schedulerEnabled,
@@ -18,9 +27,24 @@ export default function SchedulerSection({
   jobs,
   onJobConfigChange,
 }: SchedulerSectionProps) {
-  // Sync tasks definition for all 6 backend jobs
+  const [sourceDraft, setSourceDraft] = useState('');
+
+  const addBoardSource = () => {
+    const v = sourceDraft.trim().toLowerCase();
+    setSourceDraft('');
+    if (!v || jobs.expiredSync.expireBoardSources.includes(v)) return;
+    onJobConfigChange('expiredSync', {
+      ...jobs.expiredSync,
+      expireBoardSources: [...jobs.expiredSync.expireBoardSources, v],
+    });
+  };
+
+  const maxJobs = jobs.activeSync.maxJobs;
+  const atsJobs = Math.round((maxJobs * jobs.activeSync.atsSharePercent) / 100);
+
+  // Sync tasks definition
   const tasks: {
-    key: keyof JobSchedulerJobs;
+    key: SyncTaskKey;
     backendType: string;
     title: string;
     badge: string;
@@ -30,54 +54,34 @@ export default function SchedulerSection({
     defaultTimeFrame?: string;
   }[] = [
     {
-      key: 'activeAts',
-      backendType: 'active-ats',
-      title: 'Active ATS Jobs Sync',
-      badge: 'ATS',
+      key: 'activeSync',
+      backendType: 'active-sync',
+      title: 'Active Jobs Sync',
+      badge: 'Active Sync',
       badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
-      description: 'Fetches newly opened and active job postings across Applicant Tracking Systems (Greenhouse, Lever, Ashby, Workday)',
+      description: 'Fetches newly opened and active job postings across platforms (ATS + Job boards)',
       hasTimeFrame: true,
-      defaultTimeFrame: '7d',
+      defaultTimeFrame: '1h',
     },
     {
-      key: 'activeJb',
-      backendType: 'active-jb',
-      title: 'Active Job Boards Sync',
-      badge: 'Job Boards',
+      key: 'modifiedSync',
+      backendType: 'modified-sync',
+      title: 'Modified Jobs Sync',
+      badge: 'Modified Sync',
       badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
-      description: 'Fetches newly opened and active postings across external job boards (LinkedIn, Wellfound, YCombinator)',
+      description: 'Updates recently altered salaries, descriptions, or status updates',
       hasTimeFrame: true,
-      defaultTimeFrame: '7d',
+      defaultTimeFrame: '1h',
     },
     {
-      key: 'modifiedAts',
-      backendType: 'modified-ats',
-      title: 'Modified ATS Jobs Sync',
-      badge: 'ATS',
-      badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
-      description: 'Updates recently altered salaries, descriptions, or status updates for ATS listings',
-      hasTimeFrame: true,
-      defaultTimeFrame: '24h',
-    },
-    {
-      key: 'expiredAts',
-      backendType: 'expired-ats',
-      title: 'Expired ATS Jobs Sync',
-      badge: 'ATS',
+      key: 'expiredSync',
+      backendType: 'expired-sync',
+      title: 'Expired Jobs Sync',
+      badge: 'Expired Sync',
       badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
-      description: 'Detects and flags ATS jobs that have closed or expired',
+      description: 'Detects and flags jobs that have been closed or expired',
       hasTimeFrame: true,
-      defaultTimeFrame: '7d',
-    },
-    {
-      key: 'expiredJb',
-      backendType: 'expired-jb',
-      title: 'Expired Job Boards Sync',
-      badge: 'Job Boards',
-      badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
-      description: 'Detects and flags job board postings that have closed or expired',
-      hasTimeFrame: true,
-      defaultTimeFrame: '7d',
+      defaultTimeFrame: '1d',
     },
     {
       key: 'organizationsSync',
@@ -173,6 +177,9 @@ export default function SchedulerSection({
             config && 'timeFrame' in config
               ? (config.timeFrame as string)
               : task.defaultTimeFrame || '';
+          const activeCfg = task.key === 'activeSync' ? jobs.activeSync : null;
+          const expiredCfg = task.key === 'expiredSync' ? jobs.expiredSync : null;
+          const orgCfg = task.key === 'organizationsSync' ? jobs.organizationsSync : null;
           const validation = validateCronExpression(cron);
 
           const updateJob = (updates: {
@@ -186,14 +193,30 @@ export default function SchedulerSection({
 
             if (task.key === 'organizationsSync') {
               onJobConfigChange(task.key, {
+                ...jobs.organizationsSync,
                 enabled: nextEnabled,
-                cronExpression: nextCron || '0 20 * * 0',
+                cronExpression: nextCron || '0 0 * * 0',
+              });
+            } else if (task.key === 'activeSync') {
+              onJobConfigChange(task.key, {
+                ...jobs.activeSync,
+                enabled: nextEnabled,
+                cronExpression: nextCron || '0 * * * *',
+                timeFrame: nextTf || task.defaultTimeFrame || '1h',
+              });
+            } else if (task.key === 'expiredSync') {
+              onJobConfigChange(task.key, {
+                ...jobs.expiredSync,
+                enabled: nextEnabled,
+                cronExpression: nextCron || '0 2 * * *',
+                timeFrame: nextTf || task.defaultTimeFrame || '1d',
               });
             } else {
               onJobConfigChange(task.key, {
+                ...jobs.modifiedSync,
                 enabled: nextEnabled,
                 cronExpression: nextCron || '0 * * * *',
-                timeFrame: nextTf || task.defaultTimeFrame || '7d',
+                timeFrame: nextTf || task.defaultTimeFrame || '1h',
               });
             }
           };
@@ -310,17 +333,206 @@ export default function SchedulerSection({
                     type="text"
                     value={timeFrame}
                     onChange={(e) => updateJob({ timeFrame: e.target.value })}
-                    placeholder={`e.g. ${task.defaultTimeFrame || '7d'}`}
-                    className="w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm text-gray-900 placeholder-gray-400"
+                    placeholder={`e.g. ${task.defaultTimeFrame || '1h'}`}
+                    className={inputClass}
                   />
+                  <div className="flex flex-wrap items-center gap-1.5 pt-2">
+                    <span className="text-[11px] text-gray-400 mr-1">Fantastic.jobs:</span>
+                    {TIME_FRAME_PRESETS.map((tf) => (
+                      <button
+                        key={tf}
+                        type="button"
+                        onClick={() => updateJob({ timeFrame: tf })}
+                        className={`text-[11px] font-medium px-2 py-0.5 rounded-lg border transition-colors ${
+                          timeFrame === tf
+                            ? 'bg-black text-white border-black'
+                            : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        {tf}
+                      </button>
+                    ))}
+                  </div>
                   <p className="text-[11px] text-gray-400 mt-1">
                     Defines how far back Fantastic.jobs queries for updates during each run.
                   </p>
                 </div>
               )}
+
+              {activeCfg && (
+                <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+                  <div>
+                    <label className={labelClass}>
+                      Max jobs per run (shared across ATS + Job boards)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={activeCfg.maxJobs}
+                      onChange={(e) =>
+                        onJobConfigChange('activeSync', {
+                          ...activeCfg,
+                          maxJobs: parseNum(e.target.value),
+                        })
+                      }
+                      className={inputClass}
+                    />
+                    <p className="text-[11px] text-gray-400 mt-1">0 = unlimited.</p>
+                  </div>
+                  <div>
+                    <label className={labelClass}>ATS share %</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={activeCfg.atsSharePercent}
+                      onChange={(e) =>
+                        onJobConfigChange('activeSync', {
+                          ...activeCfg,
+                          atsSharePercent: parseNum(e.target.value),
+                        })
+                      }
+                      className={inputClass}
+                    />
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      {maxJobs > 0
+                        ? `ATS: ${atsJobs} jobs, Job boards: ${maxJobs - atsJobs} jobs`
+                        : 'Unlimited jobs per run (set Max jobs to split by share)'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {expiredCfg && (
+                <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+                  <div>
+                    <label className={labelClass}>
+                      Expire job-board jobs older than N days (0 = off)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={expiredCfg.expireAfterDays}
+                      onChange={(e) =>
+                        onJobConfigChange('expiredSync', {
+                          ...expiredCfg,
+                          expireAfterDays: parseNum(e.target.value),
+                        })
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Job-board sources to expire</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {expiredCfg.expireBoardSources.map((src) => (
+                        <span
+                          key={src}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg bg-gray-100 text-gray-700"
+                        >
+                          {src}
+                          <button
+                            type="button"
+                            aria-label={`Remove ${src}`}
+                            onClick={() =>
+                              onJobConfigChange('expiredSync', {
+                                ...expiredCfg,
+                                expireBoardSources: expiredCfg.expireBoardSources.filter(
+                                  (v) => v !== src
+                                ),
+                              })
+                            }
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      value={sourceDraft}
+                      onChange={(e) => setSourceDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ',') {
+                          e.preventDefault();
+                          addBoardSource();
+                        }
+                      }}
+                      onBlur={addBoardSource}
+                      placeholder="Type a source and press Enter"
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {orgCfg && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <label className={labelClass}>Timeout (seconds, min 30)</label>
+                  <input
+                    type="number"
+                    min={30}
+                    step={1}
+                    value={orgCfg.timeoutSeconds}
+                    onChange={(e) =>
+                      onJobConfigChange('organizationsSync', {
+                        ...orgCfg,
+                        timeoutSeconds: parseNum(e.target.value),
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </div>
+              )}
             </div>
           );
         })}
+      </div>
+
+      {/* ── Catch-up Card ────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-3xl p-6 md:p-7 border shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-gray-100">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-bold text-gray-900">Catch-up</h3>
+            <p className="text-xs text-gray-500 mt-1">Run missed weekly sync on server start</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={jobs.catchUp.enabled}
+            onClick={() =>
+              onJobConfigChange('catchUp', { ...jobs.catchUp, enabled: !jobs.catchUp.enabled })
+            }
+            className={`w-11 h-6 rounded-full transition-colors relative flex items-center shrink-0 ${
+              jobs.catchUp.enabled ? 'bg-black' : 'bg-gray-200'
+            }`}
+          >
+            <div
+              className={`w-4 h-4 bg-white rounded-full mx-1 transition-transform duration-200 shadow-sm ${
+                jobs.catchUp.enabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+        <div className="mt-4 pt-4 border-t border-gray-100 max-w-xs">
+          <label className={labelClass}>Max age (days, min 1)</label>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={jobs.catchUp.maxAgeDays}
+            onChange={(e) =>
+              onJobConfigChange('catchUp', {
+                ...jobs.catchUp,
+                maxAgeDays: parseNum(e.target.value),
+              })
+            }
+            className={inputClass}
+          />
+        </div>
       </div>
     </div>
   );

@@ -119,34 +119,59 @@ export interface SyncTaskConfig {
   timeFrame: string;
 }
 
+export interface ActiveSyncConfig extends SyncTaskConfig {
+  /** Max jobs per run, shared across ATS + job boards (0 = unlimited) */
+  maxJobs: number;
+  /** Percentage (0-100) of maxJobs allocated to ATS */
+  atsSharePercent: number;
+}
+
+export interface ExpiredSyncConfig extends SyncTaskConfig {
+  /** Expire job-board jobs older than N days (0 = disabled) */
+  expireAfterDays: number;
+  expireBoardSources: string[];
+}
+
 export interface OrgSyncTaskConfig {
   enabled: boolean;
   cronExpression: string;
+  /** Minimum 30 */
+  timeoutSeconds: number;
+}
+
+export interface CatchUpConfig {
+  enabled: boolean;
+  /** Minimum 1 */
+  maxAgeDays: number;
 }
 
 export interface JobSchedulerJobs {
-  // 6 Primary Backend Sync Tasks
-  activeAts: SyncTaskConfig;
-  activeJb: SyncTaskConfig;
-  modifiedAts: SyncTaskConfig;
-  expiredAts: SyncTaskConfig;
-  expiredJb: SyncTaskConfig;
+  activeSync: ActiveSyncConfig;
+  modifiedSync: SyncTaskConfig;
+  expiredSync: ExpiredSyncConfig;
   organizationsSync: OrgSyncTaskConfig;
+  catchUp: CatchUpConfig;
+
+  // 6 Primary Sync Tasks / Aliases
+  activeAts?: ActiveSyncConfig | SyncTaskConfig;
+  activeJb?: ActiveSyncConfig | SyncTaskConfig;
+  modifiedAts?: SyncTaskConfig;
+  expiredAts?: ExpiredSyncConfig | SyncTaskConfig;
+  expiredJb?: ExpiredSyncConfig | SyncTaskConfig;
 
   // Kebab-case mappings matching backend types
-  'active-ats'?: SyncTaskConfig;
-  'active-jb'?: SyncTaskConfig;
+  'active-ats'?: ActiveSyncConfig | SyncTaskConfig;
+  'active-jb'?: ActiveSyncConfig | SyncTaskConfig;
   'modified-ats'?: SyncTaskConfig;
-  'expired-ats'?: SyncTaskConfig;
-  'expired-jb'?: SyncTaskConfig;
+  'expired-ats'?: ExpiredSyncConfig | SyncTaskConfig;
+  'expired-jb'?: ExpiredSyncConfig | SyncTaskConfig;
   'ats-organizations'?: OrgSyncTaskConfig;
 
   // Legacy fallback aliases
-  activeSync?: SyncTaskConfig;
-  modifiedSync?: SyncTaskConfig;
-  expiredSync?: SyncTaskConfig;
   atsOrganizations?: OrgSyncTaskConfig;
 }
+
+export type SyncTaskKey = 'activeSync' | 'modifiedSync' | 'expiredSync' | 'organizationsSync';
 
 export interface JobSettings {
   filters: JobFilters;

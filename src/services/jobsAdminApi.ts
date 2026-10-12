@@ -197,7 +197,8 @@ export const jobsAdminApi = {
   async triggerSync(
     type: string,
     timeFrame?: string,
-    filters?: Partial<JobFilters> | null
+    filters?: Partial<JobFilters> | Record<string, unknown> | null,
+    maxJobs?: number
   ): Promise<ApiResponse<{ message?: string }>> {
     const body: Record<string, unknown> = { type };
     if (timeFrame && timeFrame.trim()) {
@@ -205,6 +206,9 @@ export const jobsAdminApi = {
     }
     if (filters && Object.keys(filters).length > 0) {
       body.filters = filters;
+    }
+    if (typeof maxJobs === 'number' && maxJobs > 0) {
+      body.maxJobs = maxJobs;
     }
     return request<{ message?: string }>('/admin/jobs/sync/trigger', {
       method: 'POST',
