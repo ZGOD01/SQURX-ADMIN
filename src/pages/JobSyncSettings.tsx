@@ -275,11 +275,12 @@ export default function JobSyncSettings() {
               kebabKey: string,
               legacyKey: string,
               defaultCron: string,
-              defaultTimeFrame: string
+              defaultTimeFrame: string,
+              defaultEnabled = true
             ): SyncTaskConfig => {
               const val = (rawJobs[camelKey] || rawJobs[kebabKey] || rawJobs[legacyKey] || {}) as Partial<SyncTaskConfig>;
               return {
-                enabled: val.enabled ?? true,
+                enabled: val.enabled ?? defaultEnabled,
                 cronExpression: val.cronExpression || defaultCron,
                 timeFrame: val.timeFrame || defaultTimeFrame,
               };
@@ -326,7 +327,7 @@ export default function JobSyncSettings() {
 
             return {
               activeSync,
-              modifiedSync: parseTask('modifiedSync', 'modified-ats', 'modifiedAts', '0 * * * *', '1h'),
+              modifiedSync: parseTask('modifiedSync', 'modified-ats', 'modifiedAts', '0 * * * *', '1h', false),
               expiredSync,
               organizationsSync: orgTask,
               catchUp,

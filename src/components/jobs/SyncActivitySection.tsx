@@ -53,14 +53,14 @@ const SYNC_TYPE_META: Record<
   'expired-ats': {
     label: 'Expired ATS Jobs',
     badge: 'ATS',
-    defaultTf: '7d',
+    defaultTf: '1d',
     hasTf: true,
     desc: 'Detect and mark closed or expired ATS jobs',
   },
   'expired-jb': {
     label: 'Expired Job Boards',
     badge: 'Job Boards',
-    defaultTf: '7d',
+    defaultTf: '1d',
     hasTf: true,
     desc: 'Detect and mark closed or expired job board postings',
   },
@@ -438,7 +438,11 @@ export default function SyncActivitySection({
               />
               <p className="text-[11px] text-gray-400 mt-1">
                 {SYNC_TYPE_META[triggerType].hasTf
-                  ? `Leave empty to use ${SYNC_TYPE_META[triggerType].defaultTf}`
+                  ? `Leave empty to use ${SYNC_TYPE_META[triggerType].defaultTf}${
+                      triggerType === 'expired-ats' || triggerType === 'expired-jb'
+                        ? ' (valid: 1h, 1d, 1m)'
+                        : ''
+                    }`
                   : 'Organization sync does not query by timeframe'}
               </p>
             </div>

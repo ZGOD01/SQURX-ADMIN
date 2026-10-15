@@ -14,6 +14,7 @@ interface SchedulerSectionProps {
 }
 
 const TIME_FRAME_PRESETS = ['1h', '24h', '7d', '6m'];
+const EXPIRED_TIME_FRAME_PRESETS = ['1h', '1d', '1m'];
 
 const inputClass =
   'w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm text-gray-900 placeholder-gray-400';
@@ -327,7 +328,9 @@ export default function SchedulerSection({
               {task.hasTimeFrame && (
                 <div className="mt-4 pt-4 border-t border-gray-100">
                   <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
-                    Time Frame (e.g. 1h, 24h, 1d)
+                    {task.key === 'expiredSync'
+                      ? 'Time Frame (e.g. 1h, 1d, 1m)'
+                      : 'Time Frame (e.g. 1h, 24h, 7d, 6m)'}
                   </label>
                   <input
                     type="text"
@@ -338,7 +341,7 @@ export default function SchedulerSection({
                   />
                   <div className="flex flex-wrap items-center gap-1.5 pt-2">
                     <span className="text-[11px] text-gray-400 mr-1">Fantastic.jobs:</span>
-                    {TIME_FRAME_PRESETS.map((tf) => (
+                    {(task.key === 'expiredSync' ? EXPIRED_TIME_FRAME_PRESETS : TIME_FRAME_PRESETS).map((tf) => (
                       <button
                         key={tf}
                         type="button"
@@ -356,6 +359,11 @@ export default function SchedulerSection({
                   <p className="text-[11px] text-gray-400 mt-1">
                     Defines how far back Fantastic.jobs queries for updates during each run.
                   </p>
+                  {task.key === 'expiredSync' && (
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      1d = previous UTC day, refreshed at 01:00 UTC (06:30 IST); run it after that. 1m is for reconciliation after an outage.
+                    </p>
+                  )}
                 </div>
               )}
 
