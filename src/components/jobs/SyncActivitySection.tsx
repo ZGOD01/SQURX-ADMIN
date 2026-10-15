@@ -178,7 +178,11 @@ export default function SyncActivitySection({
 
     try {
       let filters: Record<string, unknown> | undefined;
-      if (applyFilters && currentFilters) {
+      const usesFilters =
+        triggerType === 'active-ats' ||
+        triggerType === 'active-jb' ||
+        triggerType === 'modified-ats';
+      if (usesFilters && applyFilters && currentFilters) {
         const overrides = buildFilterOverrides(currentFilters);
         if (Object.keys(overrides).length > 0) filters = overrides;
       }
@@ -198,7 +202,7 @@ export default function SyncActivitySection({
       );
 
       if (res.success) {
-        const filterNote = applyFilters && activeFiltersCount > 0
+        const filterNote = usesFilters && applyFilters && activeFiltersCount > 0
           ? ` (with ${activeFiltersCount} active API filter rules)`
           : '';
         setTriggerSuccessMsg(
@@ -531,7 +535,7 @@ export default function SyncActivitySection({
           </div>
         </form>
         <p className="text-xs text-gray-500 mt-3">
-          Manual runs use the filters and time frame currently shown on screen (even if not saved). Scheduled runs use saved settings.
+          Active and modified manual runs use the filters currently shown on screen (even if not saved). Expired runs use only the time frame.
         </p>
       </div>
 
