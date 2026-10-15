@@ -14,7 +14,7 @@ interface SchedulerSectionProps {
 }
 
 const TIME_FRAME_PRESETS = ['1h', '24h', '7d', '6m'];
-const EXPIRED_TIME_FRAME_PRESETS = ['1h', '1d', '1m'];
+const EXPIRED_TIME_FRAME_PRESETS = ['1h', '1d', '1m', '6m'];
 
 const inputClass =
   'w-full bg-gray-50/50 px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm text-gray-900 placeholder-gray-400';
@@ -71,7 +71,7 @@ export default function SchedulerSection({
       badge: 'Modified Sync',
       badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
       description: 'Updates recently altered salaries, descriptions, or status updates',
-      hasTimeFrame: true,
+      hasTimeFrame: false, // modified-ats has no time_frame parameter (fixed last 24h)
       defaultTimeFrame: '1h',
     },
     {
@@ -329,7 +329,7 @@ export default function SchedulerSection({
                 <div className="mt-4 pt-4 border-t border-gray-100">
                   <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
                     {task.key === 'expiredSync'
-                      ? 'Time Frame (e.g. 1h, 1d, 1m)'
+                      ? 'Time Frame (1h, 1d, 1m, 6m)'
                       : 'Time Frame (e.g. 1h, 24h, 7d, 6m)'}
                   </label>
                   <input
@@ -364,6 +364,14 @@ export default function SchedulerSection({
                       1d = previous UTC day, refreshed at 01:00 UTC (06:30 IST); run it after that. 1m is for reconciliation after an outage.
                     </p>
                   )}
+                </div>
+              )}
+
+              {task.key === 'modifiedSync' && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <p className="text-[11px] text-gray-500">
+                    modified-ats has no time frame: it always returns the last 24 hours. Requires the provider Pro plan; returns a very large volume, so keep it off unless needed.
+                  </p>
                 </div>
               )}
 

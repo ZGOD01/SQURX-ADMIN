@@ -563,6 +563,10 @@ export default function JobSyncSettings() {
           ? 'Organizations sync timeout must be at least 30 seconds'
           : j.catchUp.maxAgeDays < 1
           ? 'Catch-up max age must be at least 1 day'
+          : !['1h', '24h', '7d', '6m'].includes(j.activeSync.timeFrame)
+          ? 'Active Jobs Sync time frame must be one of 1h, 24h, 7d, 6m'
+          : !['1h', '1d', '1m', '6m'].includes(j.expiredSync.timeFrame)
+          ? 'Expired Jobs Sync time frame must be one of 1h, 1d, 1m, 6m'
           : null;
       if (numErr) {
         setSaveErrorMsg(`Cannot save: ${numErr}`);
