@@ -161,6 +161,14 @@ export default function JobsFiltersSection({
               placeholder="Type city or select country..."
               allowFreeTextWithoutCategory={true}
             />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Use full country names (for example "United States", not "US"). Several locations are combined with OR.
+            </p>
+            {filters.hasNoLocation && (
+              <p className="text-[11px] text-amber-700 font-medium mt-1">
+                Note: "Has No Location" cannot be combined with Location.
+              </p>
+            )}
           </div>
 
           <div>

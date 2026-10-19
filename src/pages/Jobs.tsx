@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Briefcase, Search, ExternalLink, X, AlertCircle,
-  RefreshCw, ChevronLeft, ChevronRight, Settings2, ListChecks,
+  ChevronLeft, ChevronRight, Settings2, ListChecks,
   CheckCircle2, XCircle, Clock, Zap
 } from 'lucide-react';
 import { API_BASE_URL as API_BASE } from '../config/api';
@@ -10,7 +10,7 @@ import JobSyncSettings from './JobSyncSettings';
 const LIMIT = 20;
 
 const SOURCES = ['ats', 'linkedin', 'wellfound', 'ycombinator'] as const;
-const SYNC_TYPES = ['active-ats', 'active-jb', 'modified-ats', 'expired-ats', 'expired-jb', 'ats-organizations'] as const;
+const SYNC_TYPES = ['active-ats', 'active-jb', 'modified-ats', 'expired-ats', 'expired-jb', 'ats-organizations', 'expired-boards'] as const;
 
 interface Job {
   _id: string;
@@ -120,11 +120,6 @@ export default function Jobs() {
   const [logsFilter, setLogsFilter] = useState('');
 
   // Trigger sync
-  const [triggerType, setTriggerType] = useState<typeof SYNC_TYPES[number]>('active-ats');
-  const [triggerTimeFrame, setTriggerTimeFrame] = useState('');
-  const [triggering, setTriggering] = useState(false);
-  const [triggerMessage, setTriggerMessage] = useState('');
-  const [triggerError, setTriggerError] = useState('');
 
   const fetchStats = useCallback(async () => {
     try {
@@ -244,37 +239,6 @@ export default function Jobs() {
   };
 
 
-
-  const triggerSync = async () => {
-    setTriggering(true);
-    setTriggerMessage('');
-    setTriggerError('');
-    try {
-      const defaultTf = triggerType === 'modified-ats' ? '24h' : triggerType === 'ats-organizations' ? '' : '7d';
-      const timeFrameToSend = triggerTimeFrame.trim() || (defaultTf ? defaultTf : undefined);
-      const res = await fetch(`${API_BASE}/admin/jobs/sync/trigger`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({
-          type: triggerType,
-          ...(timeFrameToSend ? { timeFrame: timeFrameToSend } : {})
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setTriggerMessage(data.message || 'Sync completed successfully');
-        fetchStats();
-        fetchUsage();
-        if (activeTab === 'logs') fetchLogs();
-      } else {
-        setTriggerError(data.message || 'Failed to trigger sync');
-      }
-    } catch {
-      setTriggerError('Network error');
-    } finally {
-      setTriggering(false);
-    }
-  };
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
@@ -519,48 +483,12 @@ export default function Jobs() {
       {/* Sync Logs Tab */}
       {activeTab === 'logs' && (
         <>
-          <div className="bg-white rounded-3xl p-6 md:p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
-              <Zap className="w-5 h-5 text-amber-500" /> Trigger Manual Sync
-            </h2>
-            <p className="text-sm text-gray-500 mb-5">Runs synchronously against Fantastic.jobs and may take a moment to complete.</p>
-
-            {triggerMessage && (
-              <div className="bg-emerald-50 text-emerald-600 p-4 rounded-xl text-sm font-medium mb-4 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4" /> {triggerMessage}
-              </div>
-            )}
-            {triggerError && (
-              <div className="bg-red-50 text-red-500 p-4 rounded-xl text-sm font-medium mb-4 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" /> {triggerError}
-              </div>
-            )}
-
-            <div className="flex flex-col sm:flex-row gap-3">
-              <select
-                value={triggerType}
-                onChange={e => setTriggerType(e.target.value as typeof SYNC_TYPES[number])}
-                className="px-4 py-3 bg-gray-50 border border-transparent rounded-2xl text-[13px] font-medium text-gray-900 focus:outline-none focus:ring-4 focus:ring-gray-100"
-              >
-                {SYNC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <input
-                type="text"
-                placeholder="Time frame (optional, e.g. 1h)"
-                value={triggerTimeFrame}
-                onChange={e => setTriggerTimeFrame(e.target.value)}
-                className="flex-1 px-4 py-3 bg-gray-50 border border-transparent rounded-2xl text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-gray-100"
-              />
-              <button
-                onClick={triggerSync}
-                disabled={triggering}
-                className={`flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-semibold text-white shadow-lg transition-all duration-300 ${
-                  triggering ? 'bg-gray-500 cursor-not-allowed' : 'bg-black hover:bg-gray-800 hover:shadow-black/20'
-                }`}
-              >
-                {triggering ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><RefreshCw className="w-4 h-4" /> Run Sync</>}
-              </button>
-            </div>
+          <div className="bg-white rounded-3xl p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 mb-6 flex items-start gap-3">
+            <Zap className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+            <p className="text-sm text-gray-600">
+              To run a sync manually, open the <button type="button" onClick={() => setActiveTab('settings')} className="font-semibold text-gray-900 underline">Sync Settings</button> tab
+              and use <span className="font-semibold text-gray-900">Trigger Manual Sync</span> under Sync Activity. This page only shows the logs.
+            </p>
           </div>
 
           <div className="bg-white rounded-3xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 flex items-center gap-3 mb-6">

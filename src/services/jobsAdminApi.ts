@@ -61,10 +61,19 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
           ? 'Validation failed. Please check the values provided.'
           : `Server returned error (${res.status})`);
 
+      // Validation errors come back as [{ field, message }]: show the details, not just "Validation failed".
+      const rawErrors: unknown = json?.errors;
+      const details = Array.isArray(rawErrors)
+        ? rawErrors
+            .map((e) => (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : ''))
+            .filter(Boolean)
+            .join('; ')
+        : '';
+
       return {
         success: false,
         statusCode: res.status,
-        message: errorMessage,
+        message: details ? `${errorMessage}: ${details}` : errorMessage,
         errors: json?.errors,
         data: (json?.data as T) ?? (null as unknown as T),
       };

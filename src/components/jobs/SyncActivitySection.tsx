@@ -46,21 +46,21 @@ const SYNC_TYPE_META: Record<
   'modified-ats': {
     label: 'Modified ATS Jobs',
     badge: 'ATS',
-    defaultTf: '24h',
-    hasTf: true,
-    desc: 'Update altered jobs and descriptions from ATS',
+    defaultTf: '',
+    hasTf: false,
+    desc: 'Update altered jobs and descriptions from ATS (always the last 24 hours; Pro plan, very large volume)',
   },
   'expired-ats': {
     label: 'Expired ATS Jobs',
     badge: 'ATS',
-    defaultTf: '7d',
+    defaultTf: '1d',
     hasTf: true,
     desc: 'Detect and mark closed or expired ATS jobs',
   },
   'expired-jb': {
     label: 'Expired Job Boards',
     badge: 'Job Boards',
-    defaultTf: '7d',
+    defaultTf: '1d',
     hasTf: true,
     desc: 'Detect and mark closed or expired job board postings',
   },
@@ -74,11 +74,21 @@ const SYNC_TYPE_META: Record<
   'expired-boards': {
     label: 'Expired Job Boards (By Age)',
     badge: 'Job Boards',
-    defaultTf: '7d',
-    hasTf: true,
+    defaultTf: '',
+    hasTf: false,
     desc: 'Expire job-board postings older than configured days',
   },
 };
+
+const ACTIVE_TIME_FRAMES = ['1h', '24h', '7d', '6m'];
+const EXPIRED_TIME_FRAMES = ['1h', '1d', '1m', '6m'];
+
+/** Valid time frames per sync type (empty when the type takes no time frame). */
+function validTimeFrames(type: typeof SYNC_TYPES[number]): string[] {
+  if (type === 'active-ats' || type === 'active-jb') return ACTIVE_TIME_FRAMES;
+  if (type === 'expired-ats' || type === 'expired-jb') return EXPIRED_TIME_FRAMES;
+  return [];
+}
 
 /** Keep only meaningful filter values (non-empty arrays/strings, booleans, numbers). */
 function buildFilterOverrides(filters: object): Record<string, unknown> {
@@ -167,7 +177,6 @@ export default function SyncActivitySection({
     e.preventDefault();
     if (isTriggering) return;
 
-    setIsTriggering(true);
     setTriggerSuccessMsg(null);
     setTriggerErrorMsg(null);
 
@@ -175,10 +184,21 @@ export default function SyncActivitySection({
     const effectiveTimeFrame = typeMeta.hasTf
       ? (triggerTimeFrame.trim() || typeMeta.defaultTf)
       : undefined;
+    if (typeMeta.hasTf && effectiveTimeFrame && !validTimeFrames(triggerType).includes(effectiveTimeFrame)) {
+      setTriggerErrorMsg(
+        `Invalid time frame "${effectiveTimeFrame}" for ${triggerType}. Valid values: ${validTimeFrames(triggerType).join(', ')}`
+      );
+      return;
+    }
 
+    setIsTriggering(true);
     try {
       let filters: Record<string, unknown> | undefined;
-      if (applyFilters && currentFilters) {
+      const usesFilters =
+        triggerType === 'active-ats' ||
+        triggerType === 'active-jb' ||
+        triggerType === 'modified-ats';
+      if (usesFilters && applyFilters && currentFilters) {
         const overrides = buildFilterOverrides(currentFilters);
         if (Object.keys(overrides).length > 0) filters = overrides;
       }
@@ -198,7 +218,7 @@ export default function SyncActivitySection({
       );
 
       if (res.success) {
-        const filterNote = applyFilters && activeFiltersCount > 0
+        const filterNote = usesFilters && applyFilters && activeFiltersCount > 0
           ? ` (with ${activeFiltersCount} active API filter rules)`
           : '';
         setTriggerSuccessMsg(
@@ -428,7 +448,7 @@ export default function SyncActivitySection({
                 placeholder={
                   SYNC_TYPE_META[triggerType].hasTf
                     ? `Default: ${SYNC_TYPE_META[triggerType].defaultTf}`
-                    : 'N/A for directory'
+                    : 'Not used for this type'
                 }
                 value={triggerTimeFrame}
                 onChange={(e) => setTriggerTimeFrame(e.target.value)}
@@ -438,8 +458,8 @@ export default function SyncActivitySection({
               />
               <p className="text-[11px] text-gray-400 mt-1">
                 {SYNC_TYPE_META[triggerType].hasTf
-                  ? `Leave empty to use ${SYNC_TYPE_META[triggerType].defaultTf}`
-                  : 'Organization sync does not query by timeframe'}
+                  ? `Leave empty to use ${SYNC_TYPE_META[triggerType].defaultTf} (valid: ${validTimeFrames(triggerType).join(', ')})`
+                  : 'Not used for this type'}
               </p>
             </div>
 
@@ -469,6 +489,9 @@ export default function SyncActivitySection({
           </div>
 
           {/* ── API Filters Integration Bar ──────────────────────────────── */}
+          {(triggerType === 'active-ats' ||
+            triggerType === 'active-jb' ||
+            triggerType === 'modified-ats') && (
           <div className="pt-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-50/60 p-3.5 rounded-2xl border">
             <div className="flex items-center gap-3">
               <button
@@ -525,9 +548,10 @@ export default function SyncActivitySection({
               </span>
             </div>
           </div>
+          )}
         </form>
         <p className="text-xs text-gray-500 mt-3">
-          Manual runs use the filters and time frame currently shown on screen (even if not saved). Scheduled runs use saved settings.
+          Active and modified manual runs use the filters currently shown on screen (even if not saved). Expired runs use only the time frame.
         </p>
       </div>
 
